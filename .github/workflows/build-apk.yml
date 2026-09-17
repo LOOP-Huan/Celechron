@@ -14,6 +14,7 @@ jobs:
       - name: Checkout Celechron 1.3.0
         uses: actions/checkout@v4
         with:
+          repository: Celechron/Celechron
           ref: 1.3.0
 
       - name: Setup Java
