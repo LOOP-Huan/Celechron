@@ -20,11 +20,11 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v1.3.1-library-preview-20261002.2
-      RELEASE_TITLE: Celechron 1.3.1 研讨间预约登录修正版
-      APK_NAME: celechron-v1.3.1-library-preview2-universal.apk
+      RELEASE_TAG: v1.3.1-library-preview-20261003
+      RELEASE_TITLE: Celechron 1.3.1 座位与研讨间预约预览版
+      APK_NAME: celechron-v1.3.1-library-preview3-universal.apk
       APP_VERSION: 1.3.1
-      APP_BUILD_NUMBER: '2'
+      APP_BUILD_NUMBER: '3'
 
     steps:
       - name: Check out the exact source commit
@@ -131,17 +131,19 @@ jobs:
           release_dir="$RUNNER_TEMP/library-preview-assets"
           notes_file="$RUNNER_TEMP/library-preview-release-notes.md"
           cat > "$notes_file" <<'NOTES'
-          修正研讨间预约登录对官网 `/h5/index.html` 认证回调的兼容性：原先仅接受 `/h5/`，可能漏掉认证码并提示「图书馆登录未返回有效的认证结果」。登录导航改用浏览器请求头，认证失败时显示不含凭据的阶段与状态信息。
+          新增原生图书馆座位预约。入口：学业页 → 图书馆预约 → 座位预约。支持按馆区、楼层、日期和官网固定时段查询座位，搜索座位号及设施，确认提交、查看本人预约记录与取消预约。
 
-          保留原生研讨间查询、预约、本人预约记录与取消功能。相关回归测试已通过；真实账号中间跳转尚未取得，修正版仍需实际账号确认。
+          使用官网当前的 `booking.lib.zju.edu.cn` 座位入口，与研讨间复用认证实现。按服务器时间和开放规则展示可用时段，提交前重新核验区域、时段和座位；提交结果未知时不会自动重发，需先查询对应预约记录核实。
 
-          本版暂不支持座位预约；需要附件、特殊空间申请及成员邀请请使用图书馆官网。预约服务按需加载，不影响原有登录和学业刷新。
+          保留原生研讨间查询、预约、本人预约记录与取消功能，并增强账号变化后的请求中止和重复提交防护。预约服务按需加载；没有增加系统权限或定时预约功能。
 
-          此 APK 由当前源码在 GitHub Actions 中重新构建，完整自动测试已通过，并通过 APK 签名与 SHA-256 校验。尚未使用真实校园账号完成预约联调。
+          当前支持普通座位。签到、暂离、签退，以及需要附件的特殊空间申请和成员邀请，请按图书馆规定通过官方渠道办理。
+
+          此 APK 由当前源码在 GitHub Actions 中重新构建，196 项自动测试已通过，并通过 APK 签名与 SHA-256 校验。原有研讨间登录和列表已获实际使用反馈；新增座位功能尚未使用真实校园账号完成查询、预约和取消联调，预约结果请以官网记录为准。
 
           **安装须知：**支持 Android 9 及以上，包含 arm64-v8a、armeabi-v7a、x86_64。本预发布使用本次 CI 生成的测试签名，与原版、上一预发布及本地测试包的签名不同，不能直接覆盖安装。卸载已有版本会清除本地数据，请先导出需要保留的数据。
 
-          版本：1.3.1+2。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
+          版本：1.3.1+3。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
           NOTES
           printf '\n源码提交：`%s`\n\n<!-- celechron-library-preview-source:%s -->\n' "$GITHUB_SHA" "$GITHUB_SHA" >> "$notes_file"
           gh release create "$RELEASE_TAG" \

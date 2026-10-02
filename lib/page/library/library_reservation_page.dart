@@ -5,6 +5,8 @@ import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'library_seat_page.dart';
+
 typedef LibraryBookingClientFactory = LibraryBookingClient Function(
   String username,
   String password,
@@ -15,10 +17,12 @@ class LibraryReservationPage extends StatefulWidget {
     super.key,
     required this.scholar,
     this.clientFactory,
+    this.seatClientFactory,
   });
 
   final Scholar scholar;
   final LibraryBookingClientFactory? clientFactory;
+  final LibrarySeatClientFactory? seatClientFactory;
 
   @override
   State<LibraryReservationPage> createState() => _LibraryReservationPageState();
@@ -75,7 +79,15 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     _username = scholar.username!;
     _password = scholar.password!;
     _client = widget.clientFactory?.call(_username!, _password!) ??
-        LibraryBookingService(username: _username!, password: _password!);
+        LibraryBookingService(
+          username: _username!,
+          password: _password!,
+          canUseSession: () =>
+              mounted &&
+              widget.scholar.isLogan &&
+              widget.scholar.username == _username &&
+              widget.scholar.password == _password,
+        );
     unawaited(_loadCatalog());
   }
 
@@ -583,6 +595,20 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                     ..._bookingWidgets()
                   else
                     ..._mineWidgets(),
+                  CupertinoButton(
+                    key: const ValueKey('library-seat-entry'),
+                    onPressed: _busy
+                        ? null
+                        : () => Navigator.of(context).push(
+                              CupertinoPageRoute<void>(
+                                builder: (_) => LibrarySeatPage(
+                                  scholar: widget.scholar,
+                                  seatClientFactory: widget.seatClientFactory,
+                                ),
+                              ),
+                            ),
+                    child: const Text('切换到座位预约'),
+                  ),
                   _note('需要附件的特殊申请和成员邀请可在图书馆官网处理，官网可能需要重新登录。'),
                   CupertinoButton(
                     onPressed: _busy ? null : _openOfficialSite,

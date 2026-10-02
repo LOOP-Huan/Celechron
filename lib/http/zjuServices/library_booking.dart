@@ -4,11 +4,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:celechron/model/library_reservation.dart';
+import 'package:celechron/model/library_seat.dart';
 import 'package:pointycastle/export.dart';
 
 import 'zjuam.dart';
 
 export 'package:celechron/model/library_reservation.dart';
+export 'package:celechron/model/library_seat.dart';
 
 typedef SsoCookieProvider = Future<Cookie?> Function(
   HttpClient client,
@@ -73,10 +75,13 @@ class _LibraryResponse {
       this.status, this.body, this.location, this.contentType);
 }
 
+enum _LibraryWriteDomain { seminar, seat }
+
 /// An account-scoped session for booking.lib.zju.edu.cn, deliberately separate
 /// from the academic clients. Tokens, cookies and member data are never saved.
 /// Only read operations may retry after explicit authentication expiry.
-class LibraryBookingService implements LibraryBookingClient {
+class LibraryBookingService
+    implements LibraryBookingClient, LibrarySeatBookingClient {
   static final Uri serviceUri =
       Uri.https('booking.lib.zju.edu.cn', '/api/cas/cas');
   static final Uri _casLoginUri = Uri.https(
@@ -92,6 +97,7 @@ class LibraryBookingService implements LibraryBookingClient {
   final HttpClient _httpClient;
   final SsoCookieProvider _ssoCookieProvider;
   final DateTime Function() _now;
+  final bool Function()? _canUseSession;
   final Duration requestTimeout;
   final List<_StoredCookie> _cookies = [];
   Future<void>? _loginFuture;
@@ -99,10 +105,14 @@ class LibraryBookingService implements LibraryBookingClient {
   String _memberId = '';
   String _mobile = '';
   String _rules = '';
+  String _seatRules = '';
+  Duration? _serverClockOffset;
   bool _disposed = false;
   bool _writing = false;
   bool _preparingSubmission = false;
   bool _unresolvedMutation = false;
+  _LibraryWriteDomain? _unresolvedMutationDomain;
+  int _unresolvedMutationVersion = 0;
   int _generation = 0;
 
   LibraryBookingService({
@@ -111,11 +121,13 @@ class LibraryBookingService implements LibraryBookingClient {
     HttpClient? httpClient,
     SsoCookieProvider? ssoCookieProvider,
     DateTime Function()? now,
+    bool Function()? canUseSession,
     this.requestTimeout = const Duration(seconds: 15),
   })  : _username = username,
         _password = password,
         _httpClient = httpClient ?? HttpClient(),
         _ssoCookieProvider = ssoCookieProvider ?? ZjuAm.getSsoCookie,
+        _canUseSession = canUseSession,
         _now = now ?? DateTime.now {
     _httpClient.connectionTimeout = requestTimeout;
     _httpClient.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -124,7 +136,9 @@ class LibraryBookingService implements LibraryBookingClient {
   }
 
   void _checkActive([int? generation]) {
-    if (_disposed || (generation != null && generation != _generation)) {
+    if (_disposed ||
+        (generation != null && generation != _generation) ||
+        (_canUseSession != null && !_canUseSession!())) {
       throw const LibraryBookingException('图书馆会话已关闭，请重新打开预约页面。');
     }
   }
@@ -139,6 +153,7 @@ class LibraryBookingService implements LibraryBookingClient {
     _mobile = '';
     _password = '';
     _cookies.clear();
+    _serverClockOffset = null;
     ZjuAm.clearClientSsoCookie(_httpClient, _username);
     _httpClient.close(force: true);
   }
@@ -366,14 +381,20 @@ class LibraryBookingService implements LibraryBookingClient {
         response.headers.value(HttpHeaders.contentTypeHeader),
       );
     } on LibraryBookingException {
+      request?.abort();
+      if (mutation && mayHaveBeenSent) {
+        throw const LibraryBookingException(_unknownOutcome,
+            outcomeUnknown: true);
+      }
       rethrow;
     } catch (_) {
       request?.abort();
+      if (mutation && mayHaveBeenSent) {
+        throw const LibraryBookingException(_unknownOutcome,
+            outcomeUnknown: true);
+      }
       _checkActive(generation);
-      throw LibraryBookingException(
-        mutation && mayHaveBeenSent ? _unknownOutcome : '图书馆网络请求失败，请稍后重试。',
-        outcomeUnknown: mutation && mayHaveBeenSent,
-      );
+      throw const LibraryBookingException('图书馆网络请求失败，请稍后重试。');
     }
   }
 
@@ -414,7 +435,7 @@ class LibraryBookingService implements LibraryBookingClient {
   }) async {
     final body = encrypted
         ? <String, dynamic>{
-            'aesjson': LibraryBookingCodec.encrypt(data, _now())
+            'aesjson': LibraryBookingCodec.encrypt(data, _protocolNow())
           }
         : Map<String, dynamic>.from(data);
     if (authenticated && _token != null) {
@@ -422,6 +443,10 @@ class LibraryBookingService implements LibraryBookingClient {
     }
     final response = await _request(Uri.https(_host, path),
         body: body, authenticated: authenticated, mutation: mutation);
+    if (mutation && _isRedirect(response.status)) {
+      throw const LibraryBookingException(_unknownOutcome,
+          outcomeUnknown: true);
+    }
     if (response.status == 401 ||
         response.status == 403 ||
         _isRedirect(response.status)) {
@@ -437,7 +462,9 @@ class LibraryBookingService implements LibraryBookingClient {
     Map<String, dynamic> decoded;
     try {
       decoded = _map(jsonDecode(response.body));
-      if (!decoded.containsKey('code')) throw const FormatException();
+      if (int.tryParse(_string(decoded['code'])) == null) {
+        throw const FormatException();
+      }
     } catch (_) {
       throw LibraryBookingException(
         mutation ? _unknownOutcome : '图书馆响应格式发生变化，请稍后重试。',
@@ -709,7 +736,9 @@ class LibraryBookingService implements LibraryBookingClient {
   }
 
   Future<String> _write(String path, Map<String, dynamic> body,
-      {bool encrypted = false, required String fallbackMessage}) async {
+      {bool encrypted = false,
+      _LibraryWriteDomain domain = _LibraryWriteDomain.seminar,
+      required String fallbackMessage}) async {
     _checkActive();
     if (_writing) throw const LibraryBookingException('上一项操作尚未完成，请稍候。');
     if (_unresolvedMutation) {
@@ -724,7 +753,11 @@ class LibraryBookingService implements LibraryBookingClient {
       return _message(result, fallbackMessage);
     } on LibraryBookingException catch (error) {
       if (error.authenticationRequired) _token = null;
-      if (error.outcomeUnknown) _unresolvedMutation = true;
+      if (error.outcomeUnknown) {
+        _unresolvedMutation = true;
+        _unresolvedMutationDomain = domain;
+        _unresolvedMutationVersion++;
+      }
       rethrow;
     } finally {
       _writing = false;
@@ -733,6 +766,7 @@ class LibraryBookingService implements LibraryBookingClient {
 
   @override
   Future<List<LibraryReservation>> loadReservations({int page = 1}) async {
+    final uncertaintyVersion = _unresolvedMutationVersion;
     final response =
         await _read('/api/Member/seminar', {'page': page, 'limit': 10});
     final data = _map(response['data']);
@@ -757,7 +791,8 @@ class LibraryBookingService implements LibraryBookingClient {
                 : '仅预约发起人可以取消。',
       );
     }).toList();
-    if (page == 1) _unresolvedMutation = false;
+    _completeReservationRefresh(
+        _LibraryWriteDomain.seminar, uncertaintyVersion, page);
     return reservations;
   }
 
@@ -772,6 +807,395 @@ class LibraryBookingService implements LibraryBookingClient {
     }
     return _write('/api/space/seminarCancel', {'id': reservation.id},
         fallbackMessage: '预约已取消。');
+  }
+
+  void _completeReservationRefresh(
+      _LibraryWriteDomain domain, int version, int page) {
+    _checkActive();
+    if (page == 1 &&
+        _unresolvedMutationDomain == domain &&
+        _unresolvedMutationVersion == version) {
+      _unresolvedMutation = false;
+      _unresolvedMutationDomain = null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _seatDirectory(String date) async {
+    _requireSeatDate(date);
+    // Current SeatScreening/1 -> QuickChoose uses this flat directory. The old
+    // Seat/tree module has a different schema and is not used as a fallback.
+    return _map((await _read(
+        '/reserve/index/quickSelect', {'id': '1', 'date': date},
+        successCode: 0))['data']);
+  }
+
+  DateTime _protocolNow() =>
+      _now().toUtc().add(_serverClockOffset ?? Duration.zero);
+
+  @override
+  Future<LibraryCatalog> loadSeatCatalog({String? date}) async {
+    final data =
+        await _seatDirectory(date ?? LibraryBookingCodec.dateLabel(_now()));
+    final dates = _list(data['date']).map((value) {
+      final day = _requiredString(value);
+      _requireSeatDate(day);
+      return day;
+    }).toList();
+    return LibraryCatalog(
+      dates: dates,
+      buildings: _list(data['premises']).map((value) {
+        final building = _map(value);
+        return LibraryBuilding(
+          id: _requiredString(building['id']),
+          name: _requiredString(building['name']),
+        );
+      }).toList(),
+    );
+  }
+
+  @override
+  Future<List<LibrarySeatArea>> loadSeatAreas({
+    required String buildingId,
+    required String date,
+  }) async {
+    final data = await _seatDirectory(date);
+    final floors = <String, String>{};
+    for (final value in _list(data['storey'])) {
+      final floor = _map(value);
+      if (_string(floor['topId']) == buildingId) {
+        floors[_requiredString(floor['id'])] = _requiredString(floor['name']);
+      }
+    }
+    final result = <LibrarySeatArea>[];
+    for (final value in _list(data['area'])) {
+      final area = _map(value);
+      if (_string(area['topId']) != buildingId) continue;
+      final type = _string(area['typeCategory']);
+      final supported = type == '1';
+      final freeSeats = num.tryParse(_string(area['free_num']));
+      result.add(LibrarySeatArea(
+        id: _requiredString(area['id']),
+        name: _requiredString(area['name']),
+        buildingId: buildingId,
+        floorName: floors[_string(area['parentId'])] ?? '',
+        typeCategory: type,
+        canReserve: supported && freeSeats != null && freeSeats > 0,
+        unsupportedReason: supported ? null : '此区域使用其他空间预约流程，请前往图书馆官网办理。',
+      ));
+    }
+    return result;
+  }
+
+  @override
+  Future<LibrarySeatAvailability> loadSeatAvailability({
+    required LibrarySeatArea area,
+  }) async {
+    if (area.typeCategory != '1' || area.unsupportedReason != null) {
+      return LibrarySeatAvailability(
+        area: area,
+        days: const [],
+        canReserve: false,
+        unsupportedReason:
+            area.unsupportedReason ?? '此区域使用其他空间预约流程，请前往图书馆官网办理。',
+      );
+    }
+    final dateRows =
+        _list((await _read('/api/Seat/date', {'build_id': area.id}))['data']);
+    final detail = _map((await _read(
+        '/reserve/index/detail', {'id': '1', 'areaId': area.id},
+        successCode: 0))['data']);
+    final clock = _map((await _read('/api/index/time', {}))['data']);
+    _checkActive();
+    final encodedTime = num.tryParse(_string(clock['time']));
+    if (encodedTime == null || !encodedTime.isFinite) {
+      throw const LibraryBookingException('无法确认图书馆服务器时间，请稍后重试。');
+    }
+    final seconds = encodedTime / 29 - 509;
+    if (!seconds.isFinite || seconds < 0 || seconds > 253402300799) {
+      throw const LibraryBookingException('图书馆服务器时间格式异常，请稍后重试。');
+    }
+    final serverTime = DateTime.fromMillisecondsSinceEpoch(
+        (seconds * 1000).round(),
+        isUtc: true);
+    // Keep protocol dates aligned with the server, including when a device's
+    // date differs or a long selection crosses midnight in China.
+    _serverClockOffset = serverTime.difference(_now().toUtc());
+    final configResponse = await _read('/api/index/config', {});
+    late Map<String, dynamic> config;
+    try {
+      final decoded = _map(LibraryBookingCodec.decrypt(
+          _requiredString(configResponse['data']), _protocolNow()));
+      config = _map(decoded['config']);
+    } catch (_) {
+      throw const LibraryBookingException('座位预约开放规则读取失败，请稍后重试。');
+    }
+    final opensAt = _seatMinute(_string(config['new']));
+    final closesAt = _seatMinute(_string(config['close']));
+    final systemEndsAt = _seatMinute(_string(config['end']));
+    if (opensAt == null || closesAt == null || systemEndsAt == null) {
+      throw const LibraryBookingException('座位预约开放规则格式异常，请前往图书馆官网核实。');
+    }
+    if (_seatRules.isEmpty) {
+      final rules = _map((await _read('/api/seminar/should', {}))['data']);
+      _seatRules = _plainText(_string(rules['seat_rule']));
+    }
+    _checkActive();
+    final checkedAt = _protocolNow();
+    final current = LibraryBookingCodec.shanghaiTime(checkedAt);
+    final today = LibraryBookingCodec.dateLabel(checkedAt);
+    final minute = current.hour * 60 + current.minute;
+    final second = minute * 60 + current.second;
+    final permission = _string(detail['is_reducible']) == '1';
+    final days = <LibrarySeatDay>[];
+    for (var index = 0; index < dateRows.length; index++) {
+      final dayRow = _map(dateRows[index]);
+      final date = _requiredString(dayRow['day']);
+      _requireSeatDate(date);
+      String? dayReason;
+      if (!permission) {
+        dayReason = '当前账号没有此区域的座位预约权限。';
+      } else if (!area.canReserve) {
+        dayReason = '此区域当前不可预约，请重新查询。';
+      } else if (date.compareTo(today) < 0) {
+        dayReason = '此预约日期已过期。';
+      } else if (minute > systemEndsAt ||
+          (date == today && minute > closesAt)) {
+        dayReason = '已超过图书馆公布的预约截止时间。';
+      } else if (dateRows.length > 1 &&
+          index == dateRows.length - 1 &&
+          second < opensAt * 60) {
+        dayReason = '此日期将在北京时间 ${config['new']} 开放预约。';
+      }
+      final segments = _list(dayRow['times'] ?? const []).map((value) {
+        final item = _map(value);
+        final start = _string(item['start']);
+        final end = _string(item['end']);
+        final startMinute = _seatMinute(start);
+        final endMinute = _seatMinute(end);
+        String? reason = dayReason;
+        if (startMinute == null ||
+            endMinute == null ||
+            startMinute >= endMinute) {
+          reason ??= '此时段已暂停预约。';
+        } else if (_string(item['status']) != '1') {
+          reason ??= '此时段当前不可预约。';
+        } else if (date == today && second >= endMinute * 60) {
+          reason ??= '此预约时段已经结束。';
+        }
+        return LibrarySeatSegment(
+          id: _requiredString(item['id']),
+          areaId: area.id,
+          date: date,
+          startTime: start,
+          endTime: end,
+          canReserve: reason == null,
+          unavailableReason: reason,
+        );
+      }).toList();
+      days.add(LibrarySeatDay(date: date, segments: segments));
+    }
+    return LibrarySeatAvailability(
+      area: area,
+      days: days,
+      canReserve: permission && area.canReserve,
+      rules: [_seatRules, _plainText(_string(detail['contents']))]
+          .where((value) => value.isNotEmpty)
+          .join('\n\n'),
+      unsupportedReason: permission ? null : '当前账号没有此区域的座位预约权限。',
+    );
+  }
+
+  @override
+  Future<List<LibrarySeat>> loadSeats({
+    required LibrarySeatArea area,
+    required LibrarySeatSegment segment,
+  }) async {
+    _validateSeatSelection(area, segment);
+    final response = await _read('/api/Seat/seat', {
+      'area': area.id,
+      'segment': segment.id,
+      'day': segment.date,
+      'startTime': segment.startTime,
+      'endTime': segment.endTime,
+    });
+    return _list(response['data']).map((value) {
+      final seat = _map(value);
+      final status = _string(seat['status']);
+      return LibrarySeat(
+        id: _requiredString(seat['id']),
+        name: _requiredString(seat['name']),
+        status: _seatStatusLabel(status),
+        canReserve: status == '1' && _string(seat['in_label']) == '1',
+        labels: _list(seat['labels'] ?? const [])
+            .map((label) {
+              final value = _map(label);
+              return _string(value['zhname']);
+            })
+            .where((label) => label.isNotEmpty)
+            .toList(),
+      );
+    }).toList();
+  }
+
+  @override
+  Future<String> submitSeat(LibrarySeatDraft draft) async {
+    _checkActive();
+    if (_preparingSubmission || _writing) {
+      throw const LibraryBookingException('上一项操作尚未完成，请稍候。');
+    }
+    if (_unresolvedMutation) {
+      throw const LibraryBookingException(_unknownOutcome,
+          outcomeUnknown: true);
+    }
+    _validateSeatSelection(draft.area, draft.segment);
+    if (draft.seat.id.trim().isEmpty || !draft.seat.canReserve) {
+      throw const LibraryBookingException('请选择可预约的座位。');
+    }
+    _preparingSubmission = true;
+    try {
+      final areas = await loadSeatAreas(
+          buildingId: draft.area.buildingId, date: draft.segment.date);
+      _checkActive();
+      LibrarySeatArea? area;
+      for (final value in areas) {
+        if (value.id == draft.area.id) area = value;
+      }
+      if (area == null || !area.canReserve || area.typeCategory != '1') {
+        throw const LibraryBookingException('所选区域当前不可预约，请重新查询。');
+      }
+      final availability = await loadSeatAvailability(area: area);
+      _checkActive();
+      LibrarySeatSegment? segment;
+      for (final day in availability.days) {
+        if (day.date != draft.segment.date) continue;
+        for (final value in day.segments) {
+          if (value.id == draft.segment.id) segment = value;
+        }
+      }
+      if (!availability.canReserve || segment == null || !segment.canReserve) {
+        throw LibraryBookingException(availability.unsupportedReason ??
+            segment?.unavailableReason ??
+            '所选预约时段已不可用，请重新选择。');
+      }
+      if (segment.startTime != draft.segment.startTime ||
+          segment.endTime != draft.segment.endTime) {
+        throw const LibraryBookingException('预约时段已发生变化，请重新确认。');
+      }
+      final seats = await loadSeats(area: area, segment: segment);
+      _checkActive();
+      if (!seats.any((seat) => seat.id == draft.seat.id && seat.canReserve)) {
+        throw const LibraryBookingException('所选座位已不可预约，请重新选择。');
+      }
+      return await _write(
+          '/api/Seat/confirm',
+          {
+            'seat_id': draft.seat.id,
+            'segment': segment.id,
+          },
+          encrypted: true,
+          domain: _LibraryWriteDomain.seat,
+          fallbackMessage: '座位预约已提交，请在“我的座位预约”确认状态并按要求到场签到。');
+    } finally {
+      _preparingSubmission = false;
+    }
+  }
+
+  @override
+  Future<List<LibrarySeatReservation>> loadSeatReservations(
+      {int page = 1}) async {
+    final uncertaintyVersion = _unresolvedMutationVersion;
+    final data = _map(
+        (await _read('/api/Member/seat', {'page': page, 'limit': 10}))['data']);
+    final result = _list(data['data'] ?? const []).map((value) {
+      final record = _map(value);
+      final canCancel =
+          const ['1', '2', '9'].contains(_string(record['status'])) &&
+              _string(record['oksign']) == '1';
+      final label = _string(record['statusName']);
+      return LibrarySeatReservation(
+        id: _requiredString(record['id']),
+        seatName: _string(record['name']),
+        areaName: _string(record['nameMerge']),
+        date: _string(record['day']),
+        startTime: _string(record['start']),
+        endTime: _string(record['end']),
+        status: label.isEmpty ? '状态待确认' : label,
+        canCancel: canCancel,
+        cancellationReason: canCancel ? null : '此预约当前不可取消，请按图书馆规定处理。',
+      );
+    }).toList();
+    _completeReservationRefresh(
+        _LibraryWriteDomain.seat, uncertaintyVersion, page);
+    return result;
+  }
+
+  @override
+  Future<String> cancelSeat(LibrarySeatReservation reservation) async {
+    if (_preparingSubmission) {
+      throw const LibraryBookingException('上一项操作尚未完成，请稍候。');
+    }
+    if (!reservation.canCancel || reservation.id.isEmpty) {
+      throw LibraryBookingException(
+          reservation.cancellationReason ?? '此座位预约当前不可取消。');
+    }
+    return _write('/api/Space/cancel', {'id': reservation.id},
+        domain: _LibraryWriteDomain.seat, fallbackMessage: '座位预约已取消。');
+  }
+
+  static void _validateSeatSelection(
+      LibrarySeatArea area, LibrarySeatSegment segment) {
+    final start = _seatMinute(segment.startTime);
+    final end = _seatMinute(segment.endTime);
+    _requireSeatDate(segment.date);
+    if (!area.canReserve ||
+        area.typeCategory != '1' ||
+        area.unsupportedReason != null ||
+        area.id != segment.areaId ||
+        area.id.isEmpty ||
+        segment.id.isEmpty ||
+        !segment.canReserve ||
+        start == null ||
+        end == null ||
+        start >= end) {
+      throw LibraryBookingException(area.unsupportedReason ??
+          segment.unavailableReason ??
+          '请选择有效的普通座位区域和预约时段。');
+    }
+  }
+
+  static void _requireSeatDate(String date) {
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(date);
+    if (match != null) {
+      final year = int.parse(match[1]!);
+      final month = int.parse(match[2]!);
+      final day = int.parse(match[3]!);
+      final parsed = DateTime.utc(year, month, day);
+      if (year > 0 &&
+          parsed.year == year &&
+          parsed.month == month &&
+          parsed.day == day) {
+        return;
+      }
+    }
+    throw const LibraryBookingException('座位预约日期格式无效，请重新选择。');
+  }
+
+  static int? _seatMinute(String value) {
+    final match = RegExp(r'^(\d{1,2}):(\d{2})(?::00)?$').firstMatch(value);
+    if (match == null) return null;
+    final hour = int.parse(match[1]!);
+    final minute = int.parse(match[2]!);
+    if (minute >= 60 || hour > 24 || (hour == 24 && minute != 0)) return null;
+    return hour * 60 + minute;
+  }
+
+  static String _seatStatusLabel(String status) {
+    if (status == '1') return '空闲';
+    if (status == '7') return '暂离';
+    if (const ['2', '10', '11'].contains(status)) return '已预约';
+    if (const ['6', '8', '9'].contains(status)) return '使用中';
+    if (const ['3', '4', '5'].contains(status)) return '关闭';
+    return '不可预约';
   }
 
   String _message(Map<String, dynamic> response, String fallback) {
