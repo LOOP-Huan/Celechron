@@ -398,7 +398,8 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
     await _write(
       title: '取消这条预约？',
       detail: '${reservation.areaName} · ${reservation.seatName}\n'
-          '${reservation.date} ${reservation.startTime}–${reservation.endTime}',
+          '${reservation.date} ${reservation.startTime}–${reservation.endTime}'
+          '${reservation.cancellationWarning.isEmpty ? '' : '\n\n${reservation.cancellationWarning}'}',
       confirmLabel: '确认取消',
       cancellation: reservation,
       action: () => _client!.cancelSeat(reservation),

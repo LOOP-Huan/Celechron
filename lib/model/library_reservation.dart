@@ -1,6 +1,6 @@
 /// The native library client keeps all account and reservation state in memory.
 abstract class LibraryBookingClient {
-  Future<LibraryCatalog> loadCatalog();
+  Future<LibraryCatalog> loadCatalog({String? date});
   Future<List<LibraryRoom>> loadRooms({
     required String buildingId,
     required String date,
@@ -58,12 +58,23 @@ class LibraryRoom {
   final String description;
   final bool canReserve;
 
+  /// Missing directory flags do not establish a booking permission; details
+  /// must be queried before enabling an actual submission.
+  final bool availabilityKnown;
+  final String? unavailableReason;
+  final String typeCategory;
+  final int earlierPeriods;
+
   const LibraryRoom({
     required this.id,
     required this.name,
     required this.buildingId,
     this.description = '',
     this.canReserve = true,
+    this.availabilityKnown = true,
+    this.unavailableReason,
+    this.typeCategory = '2',
+    this.earlierPeriods = 0,
   });
 }
 
@@ -104,6 +115,7 @@ class LibraryRoomAvailability {
   final String mobile;
   final String rules;
   final String? unsupportedReason;
+  final String? unavailableReason;
   final bool requireUntilClosing;
   final int? earliestStartMinute;
 
@@ -125,6 +137,7 @@ class LibraryRoomAvailability {
     this.mobile = '',
     this.rules = '',
     this.unsupportedReason,
+    this.unavailableReason,
     this.requireUntilClosing = false,
     this.earliestStartMinute,
   });

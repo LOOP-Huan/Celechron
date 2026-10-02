@@ -124,6 +124,7 @@ class LibrarySeatReservation {
   final String status;
   final bool canCancel;
   final String? cancellationReason;
+  final String cancellationWarning;
 
   const LibrarySeatReservation({
     required this.id,
@@ -135,5 +136,6 @@ class LibrarySeatReservation {
     required this.status,
     this.canCancel = false,
     this.cancellationReason,
+    this.cancellationWarning = '',
   });
 }

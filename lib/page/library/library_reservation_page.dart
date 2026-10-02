@@ -144,13 +144,18 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     }
   }
 
-  Future<void> _loadCatalog() => _read((client) async {
-        final catalog = await client.loadCatalog();
+  Future<void> _loadCatalog({String? date, String? preferredBuildingId}) =>
+      _read((client) async {
+        final catalog = await client.loadCatalog(date: date);
         if (!_checkAccount()) return;
         setState(() {
           _catalog = catalog;
-          _building = catalog.buildings.firstOrNull;
-          _date = catalog.dates.firstOrNull;
+          _building = catalog.buildings
+                  .where((building) => building.id == preferredBuildingId)
+                  .firstOrNull ??
+              catalog.buildings.firstOrNull;
+          _date =
+              catalog.dates.contains(date) ? date : catalog.dates.firstOrNull;
           _resetRoom();
         });
         if (_building != null && _date != null) {
@@ -160,7 +165,9 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
           );
           if (_checkAccount()) setState(() => _rooms = rooms);
         }
-      }, () => unawaited(_loadCatalog()));
+      },
+          () => unawaited(_loadCatalog(
+              date: date, preferredBuildingId: preferredBuildingId)));
 
   void _resetRoom() {
     _rooms = [];
@@ -279,8 +286,12 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
   Future<void> _chooseDate() async {
     final value = await _choose('选择预约日期', _catalog!.dates, (date) => date);
     if (!mounted || value == null || value == _date) return;
-    setState(() => _date = value);
-    await _loadRooms();
+    final buildingId = _building?.id;
+    setState(() {
+      _date = value;
+      _resetRoom();
+    });
+    await _loadCatalog(date: value, preferredBuildingId: buildingId);
   }
 
   Future<void> _chooseStart() async {
@@ -703,7 +714,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
           CupertinoButton(
             key: ValueKey('library-room-${room.id}'),
             padding: const EdgeInsets.symmetric(vertical: 12),
-            onPressed: _busy || !room.canReserve
+            onPressed: _busy || (!room.canReserve && room.availabilityKnown)
                 ? null
                 : () => unawaited(_loadAvailability(room)),
             child: Row(
@@ -713,7 +724,10 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(room.name),
-                      if (!room.canReserve) _note('暂不可预约'),
+                      if (!room.availabilityKnown)
+                        _note('查看可用时段')
+                      else if (!room.canReserve)
+                        _note(room.unavailableReason ?? '所选日期暂不可预约'),
                     ],
                   ),
                 ),
@@ -774,7 +788,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
         if (unsupported != null)
           Text(unsupported)
         else if (!availability.canReserve)
-          const Text('当前账号无法预约此研讨间。')
+          Text(availability.unavailableReason ?? '此研讨间在所选日期暂不可预约。')
         else if (_start == null || _end == null)
           const Text('此日期暂无符合要求的空闲时段，请换一天或选择其他房间。')
         else ...[

@@ -30,6 +30,7 @@ LibraryRoomAvailability _availability({
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  _roomSchemaTests();
   _seatBookingTests();
 
   test('预约加密与独立 OpenSSL AES-CBC 向量一致，使用上海日期', () {
@@ -559,6 +560,183 @@ void main() {
   });
 }
 
+void _roomSchemaTests() {
+  group('研讨间现网目录字段', () {
+    test('现代 flat 目录缺少 status 时仍可进入详情查询', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomDirectory(client);
+      _expectRoomDirectory(client);
+      _expectAvailability(client);
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      final catalog = await service.loadCatalog(date: '2026-10-03');
+      expect(catalog.dates, ['2026-10-03']);
+      expect(catalog.buildings.single.id, '3');
+      final rooms =
+          await service.loadRooms(buildingId: '3', date: '2026-10-03');
+      final room = rooms.firstWhere((room) => room.id == '9');
+      expect(room.description, '二层');
+      expect(room.canReserve, isTrue);
+      expect(room.availabilityKnown, isFalse);
+      final availability =
+          await service.loadAvailability(room: room, date: '2026-10-03');
+      expect(availability.canReserve, isTrue);
+      expect(availability.isRangeAvailable(480, 540), isTrue);
+      expect(
+          client.requests.any((request) =>
+              request.uri.path == '/api/Seminar/tree' ||
+              request.uri.path == '/api/Seminar/date'),
+          isFalse);
+      expect(client.steps, isEmpty);
+    });
+
+    test('目录明确满额、无权限和特殊规则仍不可预约，过滤其他馆舍', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomDirectory(client);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final rooms =
+          await service.loadRooms(buildingId: '3', date: '2026-10-03');
+      expect(rooms.map((room) => room.id),
+          ['9', 'full', 'denied', 'special', 'multi-day']);
+      expect(rooms.map((room) => room.canReserve),
+          [true, false, false, false, false]);
+      expect(
+          rooms
+              .skip(1)
+              .every((room) => room.unavailableReason?.isNotEmpty ?? false),
+          isTrue);
+      expect(client.steps, isEmpty);
+    });
+
+    for (final permissions in [
+      (label: '旧详情允许且新详情缺字段', old: 1, current: null, allowed: true),
+      (label: '新详情允许且旧详情缺字段', old: null, current: 1, allowed: true),
+      (label: '旧详情拒绝优先于新详情允许', old: 0, current: 1, allowed: false),
+      (label: '新详情拒绝优先于旧详情允许', old: 1, current: 0, allowed: false),
+      (label: '两处权限都缺失', old: null, current: null, allowed: false),
+    ]) {
+      test('${permissions.label}时使用明确权限证据决定是否可提交', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectAvailability(client,
+            detailPermission: permissions.old,
+            formPermission: permissions.current);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final availability =
+            await service.loadAvailability(room: _room, date: '2026-10-03');
+        expect(availability.canReserve, permissions.allowed);
+        expect(availability.isRangeAvailable(480, 540), permissions.allowed);
+        if (!permissions.allowed) {
+          expect(availability.unavailableReason, isNotEmpty);
+        }
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('旧目录快照不可预约不能覆盖新详情已允许的实际空闲时段', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectAvailability(client, fullyBooked: null);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final availability = await service.loadAvailability(
+          room: const LibraryRoom(
+              id: '9', name: '讨论室 9', buildingId: '3', canReserve: false),
+          date: '2026-10-03');
+      expect(availability.canReserve, isTrue);
+      expect(availability.isRangeAvailable(480, 540), isTrue);
+      expect(client.steps, isEmpty);
+    });
+
+    test('目录允许查询但最新详情无预约权限时不能发送预约申请', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectAvailability(client, detailPermission: 0, formPermission: 1);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      await expectLater(
+          service.submit(_draft()), throwsA(isA<LibraryBookingException>()));
+      expect(
+          client.requests
+              .any((request) => request.uri.path == '/reserve/index/confirm'),
+          isFalse);
+      expect(client.steps, isEmpty);
+    });
+  });
+}
+
+void _expectRoomDirectory(_Client client) {
+  client.expectRequest('POST', '/reserve/index/quickSelect', (request) {
+    expect(request.json,
+        {'id': '2', 'date': '2026-10-03', 'authorization': 'bearerfake-token'});
+    return _Response.json({
+      'code': 0,
+      'data': {
+        'date': ['2026-10-03'],
+        'premises': [
+          {'id': '3', 'name': '测试图书馆'}
+        ],
+        'storey': [
+          {'id': '30', 'name': '二层', 'topId': '3'}
+        ],
+        'area': [
+          // Modern quickSelect rows do not supply the legacy tree's status.
+          {
+            'id': '9',
+            'name': '讨论室 9',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '2'
+          },
+          {
+            'id': 'full',
+            'name': '满额研讨间',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '2',
+            'Fully_Booked': 1
+          },
+          {
+            'id': 'denied',
+            'name': '无权限研讨间',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '2',
+            'is_reducible': 0
+          },
+          {
+            'id': 'special',
+            'name': '特殊预约空间',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '5'
+          },
+          {
+            'id': 'multi-day',
+            'name': '多日空间',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '2',
+            'earlierPeriods': 2
+          },
+          {
+            'id': 'other',
+            'name': '其他馆舍',
+            'topId': '99',
+            'parentId': '90',
+            'typeCategory': '2'
+          },
+        ],
+      }
+    });
+  });
+}
+
 void _seatBookingTests() {
   group('普通座位预约', () {
     test('解析馆舍楼层区域与日期，单会话跨查询复用 token', () async {
@@ -568,8 +746,7 @@ void _seatBookingTests() {
       _expectSeatCatalog(client);
       _expectSeatAvailability(client);
       _expectSeatList(client);
-      client.expectRequest(
-          'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+      _expectSeatRecords(client);
       var authentications = 0;
       final service = _service(client, onAuthenticate: () => authentications++);
       addTearDown(service.dispose);
@@ -923,6 +1100,7 @@ void _seatBookingTests() {
 }
 
 void _seatMutationTests() {
+  _seatCancellationSchemaTests();
   test('没有普通座位历史时 data.data 为 null 视为空列表', () async {
     final client = _Client();
     _expectLogin(client);
@@ -933,6 +1111,7 @@ void _seatMutationTests() {
               'code': 1,
               'data': {'data': null, 'total': 0}
             }));
+    _expectActiveSeatBookings(client);
     final service = _service(client);
     addTearDown(service.dispose);
     expect(await service.loadSeatReservations(), isEmpty);
@@ -954,6 +1133,8 @@ void _seatMutationTests() {
         _seatReservationJson(id: 'ended', status: 4),
       ]);
     });
+    _expectActiveSeatBookings(client);
+    _expectActiveSeatBookings(client, rows: [_activeSeatJson(id: 'status-2')]);
     client.expectRequest('POST', '/api/Space/cancel', (request) {
       expect(request.json,
           {'id': 'status-2', 'authorization': 'bearerfake-token'});
@@ -1025,8 +1206,8 @@ void _seatMutationTests() {
   test('只有未知写结果之后重新读取座位记录第一页才能解除锁', () async {
     final client = _Client();
     _expectLogin(client);
-    client.expectRequest(
-        'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+    _expectSeatRecords(client);
+    _expectActiveSeatBookings(client, rows: [_activeSeatJson()]);
     client.expectRequest('POST', '/api/Space/cancel', (_) {
       throw TimeoutException('Fake cancellation timeout');
     });
@@ -1034,10 +1215,13 @@ void _seatMutationTests() {
       expect(request.json['page'], 2);
       return _seatReservationsResponse();
     });
+    _expectActiveSeatBookings(client);
     client.expectRequest('POST', '/api/Member/seat', (request) {
       expect(request.json['page'], 1);
       return _seatReservationsResponse();
     });
+    _expectActiveSeatBookings(client);
+    _expectActiveSeatBookings(client, rows: [_activeSeatJson()]);
     client.expectRequest('POST', '/api/Space/cancel',
         (_) => _Response.json({'code': 1, 'msg': '已取消'}));
     final service = _service(client);
@@ -1058,17 +1242,18 @@ void _seatMutationTests() {
   test('未知结果前已经发起的第一页查询晚到不能解除写锁', () async {
     final client = _Client();
     _expectLogin(client);
-    client.expectRequest(
-        'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+    _expectSeatRecords(client);
     final readStarted = Completer<void>();
     final pendingRead = Completer<HttpClientResponse>();
     client.expectRequest('POST', '/api/Member/seat', (_) {
       readStarted.complete();
       return pendingRead.future;
     });
+    _expectActiveSeatBookings(client, rows: [_activeSeatJson()]);
     client.expectRequest('POST', '/api/Space/cancel', (_) {
       throw TimeoutException('Fake cancellation timeout');
     });
+    _expectActiveSeatBookings(client);
     final service = _service(client);
     addTearDown(service.dispose);
     final record = (await service.loadSeatReservations()).single;
@@ -1088,8 +1273,8 @@ void _seatMutationTests() {
   test('研讨间记录不能解除普通座位的未知结果锁', () async {
     final client = _Client();
     _expectLogin(client);
-    client.expectRequest(
-        'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+    _expectSeatRecords(client);
+    _expectActiveSeatBookings(client, rows: [_activeSeatJson()]);
     client.expectRequest('POST', '/api/Space/cancel', (_) {
       throw TimeoutException('Fake seat cancellation timeout');
     });
@@ -1112,8 +1297,7 @@ void _seatMutationTests() {
     client.expectRequest('POST', '/api/space/seminarCancel', (_) {
       throw TimeoutException('Fake room cancellation timeout');
     });
-    client.expectRequest(
-        'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+    _expectSeatRecords(client);
     final service = _service(client);
     addTearDown(service.dispose);
     final record = (await service.loadReservations()).single;
@@ -1123,6 +1307,266 @@ void _seatMutationTests() {
     expect(client.steps, isEmpty);
   });
 }
+
+void _seatCancellationSchemaTests() {
+  group('官网首页座位取消能力', () {
+    test('同一预约首页明确允许取消时不受历史 status 门槛误挡', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client,
+          rows: [_seatReservationJson(id: '101', status: 3, oksign: 0)],
+          active: [_activeSeatJson(id: 101, type: 1)]);
+      _expectActiveSeatBookings(client, rows: [_activeSeatJson(id: 101)]);
+      client.expectRequest('POST', '/api/Space/cancel', (request) {
+        expect(
+            request.json, {'id': '101', 'authorization': 'bearerfake-token'});
+        return _Response.json({'code': 1, 'msg': '已取消该预约'});
+      });
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadSeatReservations()).single;
+      expect(record.canCancel, isTrue);
+      expect(await service.cancelSeat(record), '已取消该预约');
+      expect(
+          client.requests
+              .where((request) => request.uri.path == '/api/Space/cancel'),
+          hasLength(1));
+      expect(
+          client.requests.any((request) =>
+              request.uri.path.toLowerCase().contains('checkout') ||
+              request.uri.path.toLowerCase().contains('leave')),
+          isFalse);
+      expect(client.steps, isEmpty);
+    });
+
+    for (final mismatch in {
+      '其他预约类型': [_activeSeatJson(type: '2')],
+      '只有座位 id 相同': [
+        _activeSeatJson(id: 'different-booking', spaceId: 'seat-booking-1')
+      ],
+      '同预约明确拒绝': [_activeSeatJson(oksign: 0)],
+      '同预约缺少取消标志': [_activeSeatJson(oksign: null)],
+      '没有当前预约': <Map<String, dynamic>>[],
+    }.entries) {
+      test('${mismatch.key}不能把历史不可取消记录变为可取消', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectSeatRecords(client,
+            rows: [_seatReservationJson(status: 3, oksign: 0)],
+            active: mismatch.value);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadSeatReservations()).single;
+        expect(record.canCancel, isFalse);
+        await expectLater(service.cancelSeat(record),
+            throwsA(isA<LibraryBookingException>()));
+        expect(
+            client.requests
+                .any((request) => request.uri.path == '/api/Space/cancel'),
+            isFalse);
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('首页明确拒绝覆盖历史允许，缺标志则保留历史已证实权限', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client, rows: [
+        _seatReservationJson(id: 'denied'),
+        _seatReservationJson(id: 'unknown'),
+      ], active: [
+        _activeSeatJson(id: 'denied', oksign: 0),
+        _activeSeatJson(id: 'unknown', oksign: null),
+      ]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      expect(
+          (await service.loadSeatReservations())
+              .map((record) => record.canCancel),
+          [false, true]);
+      expect(client.steps, isEmpty);
+    });
+
+    test('取消前首页权限已变为拒绝时不发取消写请求', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client, active: [_activeSeatJson()]);
+      _expectActiveSeatBookings(client, rows: [_activeSeatJson(oksign: 0)]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadSeatReservations()).single;
+      expect(record.canCancel, isTrue);
+      await expectLater(
+          service.cancelSeat(record), throwsA(isA<LibraryBookingException>()));
+      expect(
+          client.requests
+              .any((request) => request.uri.path == '/api/Space/cancel'),
+          isFalse);
+      expect(client.steps, isEmpty);
+    });
+
+    test('首页无明确权限时重新核对记录原分页，不用旧历史权限写入', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client, page: 2);
+      _expectActiveSeatBookings(client);
+      client.expectRequest('POST', '/api/Member/seat', (request) {
+        expect(request.json,
+            {'page': 2, 'limit': 10, 'authorization': 'bearerfake-token'});
+        return _seatReservationsResponse(
+            rows: [_seatReservationJson(oksign: 0)]);
+      });
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadSeatReservations(page: 2)).single;
+      expect(record.canCancel, isTrue);
+      await expectLater(
+          service.cancelSeat(record), throwsA(isA<LibraryBookingException>()));
+      expect(
+          client.requests
+              .any((request) => request.uri.path == '/api/Space/cancel'),
+          isFalse);
+      expect(client.steps, isEmpty);
+    });
+
+    test('首页查询失败保留历史展示但不能授权或解除未知结果锁', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client, active: [_activeSeatJson()]);
+      _expectActiveSeatBookings(client, rows: [_activeSeatJson()]);
+      client.expectRequest('POST', '/api/Space/cancel', (_) {
+        throw TimeoutException('Fake uncertain cancellation');
+      });
+      client.expectRequest(
+          'POST', '/api/Member/seat', (_) => _seatReservationsResponse());
+      _expectActiveSeatBookings(client, response: (_) {
+        throw TimeoutException('Fake current-booking read failure');
+      });
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final original = (await service.loadSeatReservations()).single;
+      await expectLater(service.cancelSeat(original), _unknownBookingOutcome);
+      final visible = await service.loadSeatReservations();
+      expect(visible, hasLength(1));
+      expect(visible.single.canCancel, isFalse);
+      expect(visible.single.cancellationReason, contains('核实'));
+      await expectLater(service.cancelSeat(original), _unknownBookingOutcome);
+      expect(
+          client.requests
+              .where((request) => request.uri.path == '/api/Space/cancel'),
+          hasLength(1));
+      expect(client.steps, isEmpty);
+    });
+
+    test('等待取消权限预检期间禁止并发取消', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatRecords(client, active: [_activeSeatJson()]);
+      final started = Completer<void>();
+      final pending = Completer<HttpClientResponse>();
+      _expectActiveSeatBookings(client, response: (_) {
+        started.complete();
+        return pending.future;
+      });
+      client.expectRequest('POST', '/api/Space/cancel',
+          (_) => _Response.json({'code': 1, 'msg': '已取消'}));
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadSeatReservations()).single;
+      final first = service.cancelSeat(record);
+      await started.future;
+      await expectLater(
+          service.cancelSeat(record), throwsA(isA<LibraryBookingException>()));
+      pending.complete(_Response.json({
+        'code': 1,
+        'data': [_activeSeatJson()]
+      }));
+      expect(await first, '已取消');
+      expect(
+          client.requests
+              .where((request) => request.uri.path == '/api/Space/cancel'),
+          hasLength(1));
+      expect(client.steps, isEmpty);
+    });
+
+    for (final changedWarning in [false, true]) {
+      test(changedWarning ? '取消预检出现新的特殊提示须重新确认' : '相同特殊取消提示确认后只取消一次', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectSeatRecords(client,
+            active: [_activeSeatJson(warning: '<p>本次取消可能影响预约次数。</p>')]);
+        _expectActiveSeatBookings(client, rows: [
+          _activeSeatJson(
+              warning:
+                  changedWarning ? '<p>新的取消限制说明。</p>' : '<p>本次取消可能影响预约次数。</p>')
+        ]);
+        if (!changedWarning) {
+          client.expectRequest('POST', '/api/Space/cancel',
+              (_) => _Response.json({'code': 1, 'msg': '已取消'}));
+        }
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadSeatReservations()).single;
+        expect(record.cancellationWarning, '本次取消可能影响预约次数。');
+        if (changedWarning) {
+          await expectLater(service.cancelSeat(record),
+              throwsA(isA<LibraryBookingException>()));
+          expect(
+              client.requests
+                  .any((request) => request.uri.path == '/api/Space/cancel'),
+              isFalse);
+        } else {
+          expect(await service.cancelSeat(record), '已取消');
+        }
+        expect(client.steps, isEmpty);
+      });
+    }
+  });
+}
+
+void _expectSeatRecords(
+  _Client client, {
+  List<Map<String, dynamic>>? rows,
+  List<Map<String, dynamic>> active = const [],
+  int page = 1,
+}) {
+  client.expectRequest('POST', '/api/Member/seat', (request) {
+    expect(request.json,
+        {'page': page, 'limit': 10, 'authorization': 'bearerfake-token'});
+    return _seatReservationsResponse(rows: rows);
+  });
+  _expectActiveSeatBookings(client, rows: active);
+}
+
+void _expectActiveSeatBookings(
+  _Client client, {
+  List<Map<String, dynamic>> rows = const [],
+  _ResponseFactory? response,
+}) {
+  client.expectRequest('POST', '/api/index/subscribe', (request) {
+    expect(request.json, {'authorization': 'bearerfake-token'});
+    expect(request.headers.value('authorization'), 'bearerfake-token');
+    return response?.call(request) ?? _Response.json({'code': 1, 'data': rows});
+  });
+}
+
+Map<String, dynamic> _activeSeatJson({
+  Object id = 'seat-booking-1',
+  Object type = '1',
+  String spaceId = 'physical-seat-1',
+  int? oksign = 1,
+  String? warning,
+}) =>
+    {
+      'id': id,
+      'type': type,
+      'space_id': spaceId,
+      if (oksign != null) 'oksign': oksign,
+      'areaName': '测试图书馆 二层 自习区',
+      'no': 'A001',
+      if (warning != null) 'only_cancel': 1,
+      if (warning != null) 'only_cancel_text': warning,
+    };
 
 Matcher get _unknownBookingOutcome => throwsA(isA<LibraryBookingException>()
     .having((error) => error.outcomeUnknown, 'outcomeUnknown', isTrue));
@@ -1454,7 +1898,11 @@ LibraryBookingDraft _draft() => LibraryBookingDraft(
     );
 
 void _expectAvailability(_Client client,
-    {bool occupied = false, _ResponseFactory? detail}) {
+    {bool occupied = false,
+    _ResponseFactory? detail,
+    int? detailPermission = 1,
+    int? formPermission,
+    int? fullyBooked = 0}) {
   client.expectRequest(
       'POST',
       '/api/Seminar/detail',
@@ -1464,7 +1912,9 @@ void _expectAvailability(_Client client,
             expect(request.json['day'], '2026-10-03');
             return _Response.json({
               'code': 1,
-              'data': {'is_reducible': 1}
+              'data': {
+                if (detailPermission != null) 'is_reducible': detailPermission,
+              }
             });
           });
   client.expectRequest('POST', '/api/Seminar/v1seminar', (request) {
@@ -1481,7 +1931,7 @@ void _expectAvailability(_Client client,
               'endTime': 720,
               'minTime': 60,
               'maxTime': 240,
-              'Fully_Booked': 0,
+              if (fullyBooked != null) 'Fully_Booked': fullyBooked,
               'isRemainder': 0,
               if (occupied)
                 'list': [
@@ -1507,6 +1957,7 @@ void _expectAvailability(_Client client,
             'code': 0,
             'data': {
               'name': _room.name,
+              if (formPermission != null) 'is_reducible': formPermission,
               'type_id': 2,
               'readonlyTitle': 2,
               'contents': '按时签到。'

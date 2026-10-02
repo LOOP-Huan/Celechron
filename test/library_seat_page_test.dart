@@ -14,6 +14,8 @@ Scholar _scholar({String username = '3230000001', bool loggedIn = true}) =>
 
 const _firstDate = '2026-10-03';
 const _secondDate = '2026-10-04';
+const _unknownCancellation = '取消权限暂未确认，请刷新预约记录后重试。';
+const _cancellationWarning = '请在预约开始前取消，逾期按违约处理。';
 const _secondFloor = LibrarySeatArea(
   id: 'area-2',
   name: '二层阅览区',
@@ -41,6 +43,8 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
   Object? submitError;
   bool emptySeats = false;
   bool cancelled = false;
+  bool cancellationPermissionKnown = true;
+  String cancellationWarning = '';
   Completer<String>? pendingSubmit;
   LibrarySeatDraft? submittedDraft;
   final List<({String areaId, String date})> seatQueries = [];
@@ -139,7 +143,10 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
         startTime: '08:00',
         endTime: '10:00',
         status: cancelled ? '已取消' : '预约成功',
-        canCancel: !cancelled,
+        canCancel: !cancelled && cancellationPermissionKnown,
+        cancellationReason:
+            cancellationPermissionKnown ? null : _unknownCancellation,
+        cancellationWarning: cancellationWarning,
       ),
     ];
   }
@@ -434,15 +441,34 @@ void main() {
     expect(client.submitCalls, 1);
   });
 
-  testWidgets('取消座位预约需确认，完成后以服务端记录显示取消状态', (tester) async {
-    final client = _FakeSeatClient();
+  testWidgets('取消权限未知提示刷新，确认时显示服务端警告并更新取消状态', (tester) async {
+    final client = _FakeSeatClient()
+      ..cancellationPermissionKnown = false
+      ..cancellationWarning = _cancellationWarning;
     await _openPage(tester, client);
     await tester.tap(find.text('我的座位'));
     await tester.pumpAndSettle();
     final cancel = find.byKey(const ValueKey('seat-cancel-booking-1'));
+    expect(find.text(_unknownCancellation), findsOneWidget);
+    expect(find.textContaining('永久不可取消'), findsNothing);
+    expect(cancel, findsNothing);
+    expect(client.cancelCalls, 0);
+
+    client.cancellationPermissionKnown = true;
+    await tester.tap(find.byKey(const ValueKey('seat-refresh')));
+    await tester.pumpAndSettle();
+    expect(find.text(_unknownCancellation), findsNothing);
+    expect(cancel, findsOneWidget);
     await tester.tap(cancel);
     await _pumpDialog(tester);
     expect(find.text('取消这条预约？'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(CupertinoAlertDialog),
+        matching: find.textContaining(_cancellationWarning),
+      ),
+      findsOneWidget,
+    );
     expect(client.cancelCalls, 0);
     await tester.tap(find.text('返回'));
     await tester.pumpAndSettle();
@@ -457,7 +483,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('已取消'), findsOneWidget);
     expect(cancel, findsNothing);
-    expect(client.reservationCalls, 2);
+    expect(client.reservationCalls, 3);
     expect(
       find.descendant(
         of: find.byType(CupertinoButton),

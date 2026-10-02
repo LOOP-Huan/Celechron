@@ -24,9 +24,14 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
     date = '${tomorrow.year}-'
         '${tomorrow.month.toString().padLeft(2, '0')}-'
         '${tomorrow.day.toString().padLeft(2, '0')}';
+    final afterTomorrow = tomorrow.add(const Duration(days: 1));
+    secondDate = '${afterTomorrow.year}-'
+        '${afterTomorrow.month.toString().padLeft(2, '0')}-'
+        '${afterTomorrow.day.toString().padLeft(2, '0')}';
   }
 
   late final String date;
+  late final String secondDate;
   int catalogCalls = 0;
   int roomCalls = 0;
   int availabilityCalls = 0;
@@ -36,11 +41,20 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   int disposeCalls = 0;
   Object? catalogError;
   Object? submitError;
+  List<LibraryRoom> rooms = const [_room];
+  List<LibraryRoom>? secondDateRooms;
+  final List<String?> catalogDates = [];
+  final List<({String buildingId, String date})> roomQueries = [];
+  final List<({LibraryRoom room, String date})> availabilityQueries = [];
+  bool detailCanReserve = true;
+  String? detailUnavailableReason;
+  Completer<LibraryCatalog>? pendingCatalog;
   Completer<String>? pendingSubmission;
   LibraryBookingDraft? submittedDraft;
 
-  LibraryRoomAvailability get availability => LibraryRoomAvailability(
-        room: _room,
+  LibraryRoomAvailability availability(LibraryRoom room, String date) =>
+      LibraryRoomAvailability(
+        room: room,
         date: date,
         startMinute: 8 * 60,
         endMinute: 22 * 60,
@@ -48,6 +62,15 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
         maxDurationMinutes: 4 * 60,
         titleRequired: true,
         mobile: '13800000000',
+        canReserve: detailCanReserve,
+        unavailableReason: detailUnavailableReason,
+      );
+
+  LibraryCatalog get catalog => LibraryCatalog(
+        dates: [date, secondDate],
+        buildings: const [
+          LibraryBuilding(id: 'test-building', name: '测试图书馆'),
+        ],
       );
 
   LibraryReservation get reservation => LibraryReservation(
@@ -61,16 +84,14 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
       );
 
   @override
-  Future<LibraryCatalog> loadCatalog() async {
+  Future<LibraryCatalog> loadCatalog({String? date}) async {
     catalogCalls++;
+    catalogDates.add(date);
     final error = catalogError;
     if (error != null) throw error;
-    return LibraryCatalog(
-      dates: [date],
-      buildings: const [
-        LibraryBuilding(id: 'test-building', name: '测试图书馆'),
-      ],
-    );
+    final pending = pendingCatalog;
+    if (pending != null) return pending.future;
+    return catalog;
   }
 
   @override
@@ -79,7 +100,8 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
     required String date,
   }) async {
     roomCalls++;
-    return const [_room];
+    roomQueries.add((buildingId: buildingId, date: date));
+    return date == secondDate ? secondDateRooms ?? rooms : rooms;
   }
 
   @override
@@ -88,7 +110,8 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
     required String date,
   }) async {
     availabilityCalls++;
-    return availability;
+    availabilityQueries.add((room: room, date: date));
+    return availability(room, date);
   }
 
   @override
@@ -169,6 +192,19 @@ Future<void> _pumpDialog(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
+Future<void> _scrollTo(WidgetTester tester, Finder target,
+    {double delta = 250}) async {
+  await tester.scrollUntilVisible(
+    target,
+    delta,
+    scrollable: find
+        .byWidgetPredicate((widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.down)
+        .first,
+  );
+  await tester.pump();
+}
+
 void main() {
   testWidgets('未登录时解释登录要求，不创建预约客户端', (tester) async {
     var clientCreations = 0;
@@ -224,6 +260,114 @@ void main() {
     expect(
         find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
     expect(find.textContaining('图书馆服务暂时不可用'), findsNothing);
+  });
+
+  testWidgets('目录未提供预约状态时仍可查看真实可用时段', (tester) async {
+    const unknownRoom = LibraryRoom(
+      id: 'unknown-room',
+      name: '状态待查询的研讨间',
+      buildingId: 'test-building',
+      canReserve: false,
+      availabilityKnown: false,
+    );
+    final client = _FakeLibraryBookingClient()..rooms = [unknownRoom];
+    await _openPage(tester, client);
+    final room = find.byKey(const ValueKey('library-room-unknown-room'));
+    expect(tester.widget<CupertinoButton>(room).onPressed, isNotNull);
+    expect(find.text('查看可用时段'), findsOneWidget);
+    expect(find.text('暂不可预约'), findsNothing);
+
+    await tester.tap(room);
+    await tester.pumpAndSettle();
+    expect(client.availabilityCalls, 1);
+    expect(client.availabilityQueries.single.room.id, unknownRoom.id);
+    expect(client.availabilityQueries.single.date, client.date);
+    final start = find.byKey(const ValueKey('library-start'));
+    await _scrollTo(tester, start);
+    expect(start, findsOneWidget);
+    expect(client.submitCalls, 0);
+  });
+
+  for (final reason in ['该日期已约满，请选择其他日期。', '此研讨间暂未开放预约，请查看开放安排。']) {
+    testWidgets('目录明确不可预约时保留具体原因：$reason', (tester) async {
+      final client = _FakeLibraryBookingClient()
+        ..rooms = [
+          LibraryRoom(
+            id: 'unavailable-room',
+            name: '暂不可预约研讨间',
+            buildingId: 'test-building',
+            canReserve: false,
+            availabilityKnown: true,
+            unavailableReason: reason,
+          ),
+        ];
+      await _openPage(tester, client);
+      final room = find.byKey(const ValueKey('library-room-unavailable-room'));
+      expect(find.text(reason), findsOneWidget);
+      expect(tester.widget<CupertinoButton>(room).onPressed, isNull);
+      expect(find.text('当前账号无法预约此研讨间。'), findsNothing);
+      expect(client.availabilityCalls, 0);
+      expect(client.submitCalls, 0);
+    });
+  }
+
+  testWidgets('详情不可预约时展示返回的开放限制，不误报账号无权限', (tester) async {
+    const reason = '所选日期已超过此研讨间开放范围。';
+    final client = _FakeLibraryBookingClient()
+      ..detailCanReserve = false
+      ..detailUnavailableReason = reason;
+    await _openPage(tester, client);
+    await tester.tap(find.byKey(const ValueKey('library-room-test-room')));
+    await tester.pumpAndSettle();
+    await _scrollTo(tester, find.text(reason));
+
+    expect(find.text(reason), findsOneWidget);
+    expect(find.text('当前账号无法预约此研讨间。'), findsNothing);
+    expect(find.byKey(const ValueKey('library-submit')), findsNothing);
+    expect(client.submitCalls, 0);
+  });
+
+  testWidgets('切换日期按新日期重新获取目录并在等待期间清除旧房间', (tester) async {
+    const nextRoom = LibraryRoom(
+      id: 'next-date-room',
+      name: '次日开放的研讨间',
+      buildingId: 'test-building',
+    );
+    final client = _FakeLibraryBookingClient()..secondDateRooms = [nextRoom];
+    await _openPage(tester, client);
+    await _prepareDraft(tester);
+    final pending = Completer<LibraryCatalog>();
+    client.pendingCatalog = pending;
+    addTearDown(() {
+      if (!pending.isCompleted) pending.complete(client.catalog);
+    });
+
+    final date = find.byKey(const ValueKey('library-date'));
+    await _scrollTo(tester, date, delta: -250);
+    await tester.tap(date);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(
+      of: find.byType(CupertinoActionSheet),
+      matching: find.text(client.secondDate),
+    ));
+    await _pumpDialog(tester);
+
+    expect(client.catalogCalls, 2);
+    expect(client.catalogDates.last, client.secondDate);
+    expect(find.byKey(const ValueKey('library-room-test-room')), findsNothing);
+    expect(find.byKey(const ValueKey('library-submit')), findsNothing);
+    expect(client.submitCalls, 0);
+
+    pending.complete(client.catalog);
+    await tester.pumpAndSettle();
+    expect(client.roomQueries.last,
+        (buildingId: 'test-building', date: client.secondDate));
+    final room = find.byKey(const ValueKey('library-room-next-date-room'));
+    expect(room, findsOneWidget);
+    await tester.tap(room);
+    await tester.pumpAndSettle();
+    expect(client.availabilityQueries.last.room.id, nextRoom.id);
+    expect(client.availabilityQueries.last.date, client.secondDate);
   });
 
   testWidgets('取消预约必须先确认，关闭确认框不会发送请求', (tester) async {
