@@ -105,6 +105,218 @@ void main() {
     expect(client.steps, isEmpty);
   });
 
+  test('index.html 的 CAS 交换码直接换取会话，无需请求 SPA 页面', () async {
+    final client = _Client();
+    _expectLogin(client,
+        h5Callback: '/h5/index.html#/cas?cas=fake-exchange-code');
+    client.expectRequest('POST', '/api/Member/seminar', (request) {
+      expect(request.headers.value('authorization'), 'bearerfake-token');
+      return _reservationResponse();
+    });
+    final service = _service(client);
+    addTearDown(service.dispose);
+
+    expect(await service.loadReservations(), hasLength(1));
+    expect(
+        client.requestedUris.any((uri) => uri.path.startsWith('/h5')), isFalse);
+    expect(client.steps, isEmpty);
+  });
+
+  test('浏览器导航与 JSON API 使用各自的请求头', () async {
+    final client = _Client();
+    _expectLogin(client,
+        h5Callback: '/h5/index.html#/cas?cas=fake-exchange-code');
+    client.expectRequest(
+        'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    final service = _service(client);
+    addTearDown(service.dispose);
+    await service.loadReservations();
+
+    final navigations =
+        client.requests.where((request) => request.method == 'GET');
+    expect(navigations, hasLength(3));
+    for (final request in navigations) {
+      expect(request.headers.value('x-requested-with'), isNull,
+          reason: '导航不能被服务器识别为 AJAX 请求');
+      expect(request.headers.value('accept') ?? '',
+          isNot(contains('application/json')));
+      expect(request.headers.contentType, isNull);
+    }
+    final apiRequests =
+        client.requests.where((request) => request.method == 'POST');
+    expect(apiRequests, hasLength(2));
+    for (final request in apiRequests) {
+      expect(request.headers.value('x-requested-with'), 'XMLHttpRequest');
+      expect(request.headers.value('accept'), 'application/json');
+      expect(request.headers.contentType?.mimeType, 'application/json');
+    }
+    expect(client.steps, isEmpty);
+  });
+
+  test('去除 ticket 的额外跳转保留新 PHP 会话后解析 index.html', () async {
+    final client = _Client();
+    _expectLogin(client,
+        h5Callback: '/h5/index.html#/cas?cas=fake-exchange-code',
+        cleanTicketRedirect: true);
+    client.expectRequest(
+        'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    final service = _service(client);
+    addTearDown(service.dispose);
+
+    expect(await service.loadReservations(), hasLength(1));
+    final exchange = client.requests
+        .singleWhere((request) => request.uri.path == '/api/cas/user');
+    expect(exchange.cookies.single.name, 'PHPSESSID');
+    expect(exchange.cookies.single.value, 'updated-php-session');
+    expect(
+        client.requestedUris.any((uri) => uri.path.startsWith('/h5')), isFalse);
+    expect(client.steps, isEmpty);
+  });
+
+  test('个人信息 SPA 路由不能代替认证交换码', () async {
+    final client = _Client();
+    _expectCasTicket(client);
+    client.expectRequest(
+        'GET',
+        '/api/cas/cas',
+        (_) => _Response(
+              statusCode: 302,
+              headers: {'location': '/h5/index.html#/my/info'},
+            ));
+    final service = _service(client);
+    addTearDown(service.dispose);
+
+    await expectLater(
+        service.loadReservations(), throwsA(isA<LibraryBookingException>()));
+    expect(client.requestedUris, hasLength(3));
+    expect(
+        client.requestedUris.any((uri) => uri.path.startsWith('/h5')), isFalse);
+    expect(client.requests.any((request) => request.method == 'POST'), isFalse);
+    expect(client.steps, isEmpty);
+  });
+
+  test('HTTP 200 的 CAS 失败 HTML 夹 JSON 显示票据拒绝而不泄露正文', () async {
+    final client = _Client();
+    _expectCasTicket(client);
+    const body = '<html><body><h1>CAS Authentication failed!</h1>'
+        '<pre>{"ticket":"FAKE-TICKET-SECRET","cas":"FAKE-CAS-SECRET",'
+        '"password":"FAKE-PASSWORD-SECRET test-password"}</pre>'
+        '</body></html>';
+    client.expectRequest(
+        'GET',
+        '/api/cas/cas',
+        (_) => _Response(
+              statusCode: 200,
+              headers: {'content-type': 'text/html'},
+              body: body,
+            ));
+    final service = _service(client);
+    addTearDown(service.dispose);
+
+    await expectLater(
+      service.loadReservations(),
+      throwsA(isA<LibraryBookingException>().having(
+          (error) => error.message,
+          '安全票据拒绝提示',
+          allOf([
+            contains('未接受认证票据'),
+            contains('HTTP 200'),
+            contains('HTML'),
+            isNot(contains('FAKE-TICKET-SECRET')),
+            isNot(contains('FAKE-CAS-SECRET')),
+            isNot(contains('FAKE-PASSWORD-SECRET')),
+            isNot(contains('test-password')),
+            isNot(contains(body)),
+          ]))),
+    );
+    expect(client.requestedUris, hasLength(3));
+    expect(client.steps, isEmpty);
+  });
+
+  for (final invalidCallback in {
+    '外站': 'https://example.org/h5/index.html#/cas?cas=FAKE-CAS-SECRET',
+    'HTTP':
+        'http://booking.lib.zju.edu.cn/h5/index.html#/cas?cas=FAKE-CAS-SECRET',
+    '错误承载路径':
+        'https://booking.lib.zju.edu.cn/other/index.html#/cas?cas=FAKE-CAS-SECRET',
+  }.entries) {
+    test('带交换码的${invalidCallback.key}回调不能认证', () async {
+      final client = _Client();
+      _expectCasTicket(client);
+      client.expectRequest(
+          'GET',
+          '/api/cas/cas',
+          (_) => _Response(
+                statusCode: 302,
+                headers: {'location': invalidCallback.value},
+              ));
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      await expectLater(
+          service.loadReservations(), throwsA(isA<LibraryBookingException>()));
+      expect(client.requestedUris, hasLength(3));
+      expect(
+          client.requests.any((request) => request.method == 'POST'), isFalse);
+      expect(client.steps, isEmpty);
+    });
+  }
+
+  for (final response in [
+    (
+      status: 200,
+      type: 'HTML',
+      contentType: 'text/html',
+      body: '<html><body>FAKE-TICKET-SECRET FAKE-CAS-SECRET '
+          'FAKE-PASSWORD-SECRET test-password</body></html>',
+    ),
+    (
+      status: 502,
+      type: 'JSON',
+      contentType: 'application/json',
+      body: '{"ticket":"FAKE-TICKET-SECRET","cas":"FAKE-CAS-SECRET",'
+          '"password":"FAKE-PASSWORD-SECRET test-password"}',
+    ),
+  ]) {
+    test('登录失败诊断保留 HTTP ${response.status} 与类型，不泄露票据或密码', () async {
+      final client = _Client();
+      _expectCasTicket(client,
+          ticketCallback: 'https://booking.lib.zju.edu.cn/api/cas/cas?'
+              'ticket=FAKE-TICKET-SECRET&cas=FAKE-CAS-SECRET&'
+              'password=FAKE-PASSWORD-SECRET');
+      client.expectRequest(
+          'GET',
+          '/api/cas/cas',
+          (_) => _Response(
+                statusCode: response.status,
+                headers: {'content-type': response.contentType},
+                body: response.body,
+              ));
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      await expectLater(
+        service.loadReservations(),
+        throwsA(isA<LibraryBookingException>().having(
+            (error) => error.message,
+            '安全登录诊断',
+            allOf([
+              contains('阶段'),
+              contains('HTTP ${response.status}'),
+              contains(response.type),
+              isNot(contains('FAKE-TICKET-SECRET')),
+              isNot(contains('FAKE-CAS-SECRET')),
+              isNot(contains('FAKE-PASSWORD-SECRET')),
+              isNot(contains('test-password')),
+              isNot(contains('booking.lib.zju.edu.cn')),
+              isNot(contains(response.body)),
+            ]))),
+      );
+      expect(client.requestedUris, hasLength(3));
+      expect(client.steps, isEmpty);
+    });
+  }
+
   test('取消权限必须同时满足本人、成功状态和服务端取消标志', () async {
     final client = _Client();
     _expectLogin(client);
@@ -359,7 +571,9 @@ LibraryBookingService _service(_Client client,
       },
     );
 
-void _expectLogin(_Client client, {String token = 'fake-token'}) {
+void _expectCasTicket(_Client client,
+    {String ticketCallback =
+        'https://booking.lib.zju.edu.cn/api/cas/cas?ticket=FAKE-TICKET'}) {
   client.expectRequest(
       'GET',
       '/api/cas/cas',
@@ -379,19 +593,37 @@ void _expectLogin(_Client client, {String token = 'fake-token'}) {
     expect(request.followRedirects, isFalse);
     expect(
         request.cookies.map((cookie) => cookie.name), ['iPlanetDirectoryPro']);
-    return _Response(statusCode: 302, headers: {
-      'location':
-          'https://booking.lib.zju.edu.cn/api/cas/cas?ticket=FAKE-TICKET',
-    });
+    return _Response(statusCode: 302, headers: {'location': ticketCallback});
   });
+}
+
+void _expectLogin(_Client client,
+    {String token = 'fake-token',
+    String h5Callback = '/h5/#/cas?cas=fake-exchange-code',
+    bool cleanTicketRedirect = false}) {
+  _expectCasTicket(client);
   client.expectRequest('GET', '/api/cas/cas', (request) {
     expect(request.uri.queryParameters['ticket'], 'FAKE-TICKET');
     expect(request.cookies.map((cookie) => cookie.name), ['PHPSESSID']);
     expect(request.cookies.single.value, 'fake-php-session');
-    return _Response(statusCode: 302, headers: {
-      'location': '/h5/#/cas?cas=fake-exchange-code',
-    });
+    return _Response(
+      statusCode: 302,
+      headers: {
+        'location': cleanTicketRedirect ? '/api/cas/cas' : h5Callback,
+      },
+      cookies: cleanTicketRedirect
+          ? [Cookie('PHPSESSID', 'updated-php-session')..path = '/']
+          : [],
+    );
   });
+  if (cleanTicketRedirect) {
+    client.expectRequest('GET', '/api/cas/cas', (request) {
+      expect(request.uri.queryParameters.containsKey('ticket'), isFalse);
+      expect(request.cookies.single.name, 'PHPSESSID');
+      expect(request.cookies.single.value, 'updated-php-session');
+      return _Response(statusCode: 302, headers: {'location': h5Callback});
+    });
+  }
   client.expectRequest('POST', '/api/cas/user', (request) {
     expect(request.json, {'cas': 'fake-exchange-code'});
     expect(request.headers.value('authorization'), isNull);
@@ -521,6 +753,7 @@ class _Step {
 class _Client implements HttpClient {
   final Queue<_Step> steps = Queue<_Step>();
   final List<_Request> requests = [];
+  final List<Uri> requestedUris = [];
   bool closed = false;
 
   @override
@@ -533,6 +766,7 @@ class _Client implements HttpClient {
 
   Future<HttpClientRequest> _open(String method, Uri uri) async {
     if (closed) throw StateError('Client closed');
+    requestedUris.add(uri);
     expect(steps, isNotEmpty, reason: 'Unexpected request: $method $uri');
     final step = steps.removeFirst();
     expect(method, step.method);

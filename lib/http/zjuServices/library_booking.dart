@@ -67,8 +67,10 @@ class _LibraryResponse {
   final int status;
   final String body;
   final String? location;
+  final String? contentType;
 
-  const _LibraryResponse(this.status, this.body, this.location);
+  const _LibraryResponse(
+      this.status, this.body, this.location, this.contentType);
 }
 
 /// An account-scoped session for booking.lib.zju.edu.cn, deliberately separate
@@ -189,21 +191,30 @@ class LibraryBookingService implements LibraryBookingClient {
         throw const LibraryBookingException('图书馆统一认证回调地址无效。');
       }
       String? exchangeCode;
+      late _LibraryResponse callbackResponse;
+      var redirectCount = 0;
       for (var redirects = 0; redirects < 5; redirects++) {
         final response = await _request(callback);
+        callbackResponse = response;
         if (!_isRedirect(response.status) || response.location == null) break;
         callback = callback.resolve(response.location!);
         if (!_isBookingUri(callback)) {
           throw const LibraryBookingException('图书馆登录跳转地址无效。');
         }
-        final route = Uri.tryParse(callback.fragment);
-        if (callback.path == '/h5/' && route?.path == '/cas') {
-          exchangeCode = route?.queryParameters['cas'];
+        redirectCount++;
+        if (_isSpaPath(callback.path)) {
+          // The fragment belongs to Vue and is not an HTTP resource. Extract
+          // the exchange code before requesting index.html (which only returns
+          // the SPA shell). A normal /my/info route is not a login credential.
+          exchangeCode = _casExchangeCode(callback);
           break;
+        }
+        if (callback.hasFragment) {
+          throw const LibraryBookingException('图书馆登录回调页面无效。');
         }
       }
       if (exchangeCode == null || exchangeCode.isEmpty) {
-        throw const LibraryBookingException('图书馆登录未返回有效的认证结果。');
+        throw _callbackFailure(callbackResponse, redirectCount);
       }
       final response = await _postOnce('/api/cas/user', {'cas': exchangeCode},
           authenticated: false);
@@ -235,6 +246,53 @@ class LibraryBookingService implements LibraryBookingClient {
   static bool _isRedirect(int status) =>
       const [301, 302, 303, 307, 308].contains(status);
 
+  static bool _isSpaPath(String path) =>
+      const ['/h5', '/h5/', '/h5/index.html'].contains(path);
+
+  static String? _casExchangeCode(Uri callback) {
+    if (!_isBookingUri(callback) || !_isSpaPath(callback.path)) return null;
+    final route = Uri.tryParse(callback.fragment);
+    if (route == null ||
+        route.hasScheme ||
+        route.hasAuthority ||
+        route.hasFragment ||
+        !RegExp(r'^/cas/?$', caseSensitive: false).hasMatch(route.path)) {
+      return null;
+    }
+    final values = route.queryParametersAll['cas'];
+    if (values == null || values.length != 1 || values.single.trim().isEmpty) {
+      return null;
+    }
+    return values.single;
+  }
+
+  static LibraryBookingException _callbackFailure(
+      _LibraryResponse response, int redirectCount) {
+    // phpCAS may return its failure HTML as HTTP 200 when a framework treats
+    // navigation as AJAX. Report only a fixed classification, never the body,
+    // Location, CAS ticket, exchange code or arbitrary Content-Type header.
+    final ticketRejected =
+        RegExp(r'CAS\s+Authentication\s+failed', caseSensitive: false)
+            .hasMatch(response.body);
+    final reason = ticketRejected ? '图书馆未接受认证票据' : '图书馆登录未返回有效的认证结果';
+    final body = response.body.trimLeft();
+    final contentType = response.contentType?.toLowerCase() ?? '';
+    final String responseType;
+    if (body.isEmpty) {
+      responseType = '空';
+    } else if (body.startsWith('<') || contentType.startsWith('text/html')) {
+      responseType = 'HTML';
+    } else if (body.startsWith('{') ||
+        body.startsWith('[') ||
+        contentType.startsWith('application/json')) {
+      responseType = 'JSON';
+    } else {
+      responseType = '其他';
+    }
+    return LibraryBookingException('$reason（阶段：图书馆回调；'
+        'HTTP ${response.status}；响应类型：$responseType；跳转次数：$redirectCount）。');
+  }
+
   Future<_LibraryResponse> _request(
     Uri uri, {
     Map<String, dynamic>? body,
@@ -243,6 +301,7 @@ class LibraryBookingService implements LibraryBookingClient {
     Cookie? ssoCookie,
   }) async {
     _checkActive();
+    uri = uri.removeFragment();
     final generation = _generation;
     final isCas = uri.scheme == 'https' &&
         uri.host == 'zjuam.zju.edu.cn' &&
@@ -262,6 +321,10 @@ class LibraryBookingService implements LibraryBookingClient {
           .timeout(requestTimeout);
       _checkActive(generation);
       request.followRedirects = false;
+      if (body == null) {
+        request.headers
+            .set(HttpHeaders.acceptHeader, 'text/html,application/xhtml+xml');
+      }
       if (isCas) {
         if (ssoCookie != null) {
           request.cookies.add(Cookie(ssoCookie.name, ssoCookie.value));
@@ -276,9 +339,11 @@ class LibraryBookingService implements LibraryBookingClient {
                 uri.path.startsWith(
                     item.path.endsWith('/') ? item.path : '${item.path}/'))
             .map((item) => Cookie(item.cookie.name, item.cookie.value)));
-        request.headers.set('X-Requested-With', 'XMLHttpRequest');
-        request.headers.set('lang', 'zh');
-        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        if (body != null) {
+          request.headers.set('X-Requested-With', 'XMLHttpRequest');
+          request.headers.set('lang', 'zh');
+          request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        }
         if (authenticated && _token != null) {
           request.headers.set(HttpHeaders.authorizationHeader, 'bearer$_token');
         }
@@ -294,8 +359,12 @@ class LibraryBookingService implements LibraryBookingClient {
           await utf8.decoder.bind(response).join().timeout(requestTimeout);
       _checkActive(generation);
       if (!isCas) _rememberCookies(uri, response.cookies);
-      return _LibraryResponse(response.statusCode, content,
-          response.headers.value(HttpHeaders.locationHeader));
+      return _LibraryResponse(
+        response.statusCode,
+        content,
+        response.headers.value(HttpHeaders.locationHeader),
+        response.headers.value(HttpHeaders.contentTypeHeader),
+      );
     } on LibraryBookingException {
       rethrow;
     } catch (_) {
