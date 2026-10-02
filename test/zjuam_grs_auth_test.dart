@@ -215,6 +215,29 @@ void main() {
     expect(client.pendingDescriptions, isEmpty);
   });
 
+  test('释放图书馆客户端不会清除同账号教务客户端的 SSO', () async {
+    const username = 'auth-test-clear-one-client';
+    final libraryClient = _ScriptedHttpClient();
+    final scholarClient = _ScriptedHttpClient();
+    _expectPasswordLogin(libraryClient, cookieValue: 'library-first');
+    _expectPasswordLogin(libraryClient, cookieValue: 'library-second');
+    _expectPasswordLogin(scholarClient, cookieValue: 'scholar-stays-active');
+
+    await ZjuAm.getSsoCookie(libraryClient, username, 'test-password');
+    final scholarCookie =
+        await ZjuAm.getSsoCookie(scholarClient, username, 'test-password');
+    ZjuAm.clearClientSsoCookie(libraryClient, username);
+    final newLibraryCookie =
+        await ZjuAm.getSsoCookie(libraryClient, username, 'test-password');
+    final sameScholarCookie =
+        await ZjuAm.getSsoCookie(scholarClient, username, 'test-password');
+
+    expect(newLibraryCookie?.value, 'library-second');
+    expect(identical(scholarCookie, sameScholarCookie), isTrue);
+    expect(libraryClient.pendingDescriptions, isEmpty);
+    expect(scholarClient.pendingDescriptions, isEmpty);
+  });
+
   test('研究生院只在实际登录时申请并立即兑换一张 CAS ticket', () async {
     const username = 'auth-test-graduate-just-in-time-ticket';
     const ticket = 'ST-just-in-time';

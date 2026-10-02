@@ -98,6 +98,14 @@ class ZjuAm {
     return _deleteLegacyCachedSsoCookie(username);
   }
 
+  /// Discard only this client's completed SSO session. A library session can
+  /// expire or close without invalidating the academic/widget clients.
+  /// In-flight logins retain their shared Future; callers clear after completion
+  /// if they were disposed while authentication was running.
+  static void clearClientSsoCookie(HttpClient httpClient, String username) {
+    _activeCookies.remove(_SsoLoginKey(httpClient, username));
+  }
+
   static Future<void> _deleteLegacyCachedSsoCookie(String username) {
     return _secureStorage.delete(
       key: _cookieStorageKey(username),

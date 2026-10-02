@@ -18,6 +18,7 @@ import 'package:celechron/design/refresh_status_indicator.dart';
 import 'package:celechron/design/rolling_shimmer_text.dart';
 
 import 'package:celechron/page/search/search_view.dart';
+import 'package:celechron/page/library/library_reservation_card.dart';
 import 'course_list/course_list_view.dart';
 import 'course_schedule/course_schedule_view.dart';
 import 'exam_list/exam_list_view.dart';
@@ -964,6 +965,14 @@ class ScholarPage extends StatelessWidget {
               }
             },
           ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Obx(() => LibraryReservationCard(
+                  scholar: _scholarController.scholar,
+                )),
+          ),
+        ),
         SliverToBoxAdapter(
           child: Obx(() {
             if (_scholarController.scholar.semesters.isNotEmpty) {

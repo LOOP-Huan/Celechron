@@ -33,6 +33,7 @@ dependencies:
   qr_flutter:
   app_links:
   crypto: 
+  pointycastle: ^3.9.1
   path_provider:
   share_plus: ^12.0.1 # 9fb0fb 提交当中提升了版本
   device_calendar:
