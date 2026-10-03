@@ -19,14 +19,32 @@ vec2 viewDelta(vec2 local) {
   return vec2(dot(u_toView.xy, local), dot(u_toView.zw, local));
 }
 
-vec4 sampleBackdrop(vec2 viewPoint) {
+vec2 backdropUV(vec2 viewPoint) {
   vec2 halfTexel = vec2(0.5) / u_textureSize;
   vec2 uv = clamp(viewPoint / u_viewSize, halfTexel, vec2(1.0) - halfTexel);
   // The geometry stays top-left oriented; only the GLES input texture flips.
   #ifdef IMPELLER_TARGET_OPENGLES
     uv.y = 1.0 - uv.y;
   #endif
-  return texture(u_backdrop, uv);
+  return uv;
+}
+
+vec4 sampleBackdrop(vec2 viewPoint) {
+  // Flutter 3.38 binds an ImageFilter.shader input with nearest sampling.
+  // Reconstruct between physical texel centers explicitly, so refraction of
+  // another surface's text does not magnify pixels or snap during scrolling.
+  vec2 pixel = clamp(backdropUV(viewPoint) * u_textureSize - 0.5,
+                     vec2(0.0), u_textureSize - 1.0);
+  vec2 lower = floor(pixel);
+  vec2 fraction = pixel - lower;
+  vec2 uv0 = (lower + 0.5) / u_textureSize;
+  vec2 uv1 = (min(lower + 1.0, u_textureSize - 1.0) + 0.5) / u_textureSize;
+  vec4 top = mix(texture(u_backdrop, uv0),
+                 texture(u_backdrop, vec2(uv1.x, uv0.y)), fraction.x);
+  vec4 bottom = mix(texture(u_backdrop, vec2(uv0.x, uv1.y)),
+                    texture(u_backdrop, uv1), fraction.x);
+  // The input is premultiplied RGBA; interpolation must preserve that form.
+  return mix(top, bottom, fraction.y);
 }
 
 float roundedDistance(vec2 p, vec2 halfSize, float radius) {
@@ -42,9 +60,9 @@ void main() {
   vec2 q = local - halfSize;
   float radius = clamp(u_radius, 0.0, min(halfSize.x, halfSize.y));
   float distance = roundedDistance(q, halfSize, radius);
-  vec4 base = sampleBackdrop(viewPoint);
-  if (distance > 1.5) {
-    fragColor = base;
+  if (distance >= 0.6) {
+    // Undistorted viewPoint maps straight back to this input texel center.
+    fragColor = texture(u_backdrop, backdropUV(viewPoint));
     return;
   }
 
@@ -71,15 +89,20 @@ void main() {
   // text is painted after the backdrop layer and never enters this filter.
   float blur = u_blurSigma * 1.5;
   if (blur > 0.001) {
-    vec2 dx = viewDelta(vec2(blur, 0.0));
-    vec2 dy = viewDelta(vec2(0.0, blur));
+    // Equal-radius taps preserve the old kernel's per-axis variance while
+    // avoiding its square grid of repeated fine strokes at high pixel density.
+    float ring = blur * 1.154700538;
+    vec2 dx = viewDelta(vec2(ring, 0.0));
+    vec2 dy = viewDelta(vec2(0.0, ring));
+    vec2 diagonalX = dx * 0.707106781;
+    vec2 diagonalY = dy * 0.707106781;
     glass = glass * 0.25 +
         (sampleBackdrop(refracted + dx) + sampleBackdrop(refracted - dx) +
-         sampleBackdrop(refracted + dy) + sampleBackdrop(refracted - dy)) * 0.125 +
-        (sampleBackdrop(refracted + dx + dy) +
-         sampleBackdrop(refracted - dx + dy) +
-         sampleBackdrop(refracted + dx - dy) +
-         sampleBackdrop(refracted - dx - dy)) * 0.0625;
+         sampleBackdrop(refracted + dy) + sampleBackdrop(refracted - dy) +
+         sampleBackdrop(refracted + diagonalX + diagonalY) +
+         sampleBackdrop(refracted - diagonalX + diagonalY) +
+         sampleBackdrop(refracted + diagonalX - diagonalY) +
+         sampleBackdrop(refracted - diagonalX - diagonalY)) * 0.09375;
   }
 
   float fresnel = 0.025 + 0.975 * pow(1.0 - normal.z, 5.0);
@@ -96,5 +119,10 @@ void main() {
   glass.rgb = mix(glass.rgb, vec3(glass.a), clamp(highlight, 0.0, 0.62));
   glass.rgb *= 1.0 - lip * 0.075 * max(-facing, 0.0);
   float mask = 1.0 - smoothstep(-0.6, 0.6, distance);
-  fragColor = mix(base, glass, mask);
+  // Interior pixels need no second copy of their undistorted background.
+  if (mask >= 1.0) {
+    fragColor = glass;
+  } else {
+    fragColor = mix(texture(u_backdrop, backdropUV(viewPoint)), glass, mask);
+  }
 }
