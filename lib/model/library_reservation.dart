@@ -55,6 +55,8 @@ class LibraryRoom {
   final String id;
   final String name;
   final String buildingId;
+  final String floorId;
+  final String floorName;
   final String description;
   final bool canReserve;
 
@@ -69,6 +71,8 @@ class LibraryRoom {
     required this.id,
     required this.name,
     required this.buildingId,
+    this.floorId = '',
+    this.floorName = '',
     this.description = '',
     this.canReserve = true,
     this.availabilityKnown = true,

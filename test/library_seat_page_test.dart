@@ -42,6 +42,11 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
   Object? seatError;
   Object? submitError;
   bool emptySeats = false;
+  int generatedSeatCount = 0;
+  List<LibrarySeatArea>? areas;
+  List<LibraryBuilding>? buildings;
+  String rules = '';
+  String? segmentUnavailableReason;
   bool cancelled = false;
   bool cancellationPermissionKnown = true;
   String cancellationWarning = '';
@@ -60,9 +65,10 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     catalogCalls++;
     final error = catalogError;
     if (error != null) throw error;
-    return const LibraryCatalog(
-      dates: [_firstDate, _secondDate],
-      buildings: [LibraryBuilding(id: 'library-1', name: '测试图书馆')],
+    return LibraryCatalog(
+      dates: const [_firstDate, _secondDate],
+      buildings:
+          buildings ?? const [LibraryBuilding(id: 'library-1', name: '测试图书馆')],
     );
   }
 
@@ -72,7 +78,9 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     required String date,
   }) async {
     areaCalls++;
-    return const [_secondFloor, _thirdFloor];
+    return (areas ?? const [_secondFloor, _thirdFloor])
+        .where((area) => area.buildingId == buildingId)
+        .toList();
   }
 
   @override
@@ -82,6 +90,7 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     availabilityCalls++;
     return LibrarySeatAvailability(
       area: area,
+      rules: rules,
       days: [
         for (final date in [_firstDate, _secondDate])
           LibrarySeatDay(date: date, segments: [
@@ -91,6 +100,8 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
               date: date,
               startTime: '08:00',
               endTime: '10:00',
+              canReserve: segmentUnavailableReason == null,
+              unavailableReason: segmentUnavailableReason,
             ),
           ]),
       ],
@@ -106,6 +117,17 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     seatQueries.add((areaId: area.id, date: segment.date));
     final error = seatError;
     if (error != null) throw error;
+    if (generatedSeatCount > 0) {
+      return List.generate(
+          generatedSeatCount,
+          (index) => LibrarySeat(
+                id: 'bulk-$index',
+                name: 'A${(index + 1).toString().padLeft(3, '0')}',
+                status: index == 2 ? '已占用' : '空闲',
+                canReserve: index != 2,
+                labels: index.isEven ? const ['插座', '靠窗'] : const [],
+              ));
+    }
     return emptySeats
         ? []
         : [
@@ -163,8 +185,13 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
 }
 
 Future<void> _openPage(WidgetTester tester, _FakeSeatClient client,
-    {Scholar? scholar}) async {
+    {Scholar? scholar, double textScale = 1}) async {
   await tester.pumpWidget(CupertinoApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
     home: LibrarySeatPage(
       scholar: scholar ?? _scholar(),
       seatClientFactory: (username, password) {
@@ -179,7 +206,15 @@ Future<void> _openPage(WidgetTester tester, _FakeSeatClient client,
 
 Future<void> _selectArea(WidgetTester tester,
     {LibrarySeatArea area = _secondFloor}) async {
+  if (find.byKey(const ValueKey('seat-date')).evaluate().isEmpty) {
+    await tester.tap(find.byKey(const ValueKey('seat-navigation-back')));
+    await tester.pumpAndSettle();
+  }
   final button = find.byKey(ValueKey('seat-area-${area.id}'));
+  if (button.evaluate().isEmpty) {
+    await tester.tap(find.byKey(ValueKey('library-floor-${area.floorName}')));
+    await tester.pumpAndSettle();
+  }
   await _scrollTo(tester, button);
   await tester.tap(button);
   await tester.pumpAndSettle();
@@ -210,6 +245,7 @@ void _expectNoSubmitAction(WidgetTester tester) {
 
 Future<void> _scrollTo(WidgetTester tester, Finder target,
     {double delta = 250}) async {
+  if (target.hitTestable().evaluate().isNotEmpty) return;
   await tester.scrollUntilVisible(
     target,
     delta,
@@ -225,6 +261,190 @@ Future<void> _pumpDialog(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('目录和选座分步显示，页内及 Android 返回保留选择', (tester) async {
+    final client = _FakeSeatClient();
+    await _openPage(tester, client);
+    expect(find.byKey(const ValueKey('seat-date')), findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-area-area-3')), findsNothing);
+    await _selectSeat(tester);
+    expect(find.byKey(const ValueKey('seat-date')), findsNothing);
+    expect(find.byKey(const ValueKey('seat-area-area-2')), findsNothing);
+    expect(find.text('已选座位：二层 01'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('seat-navigation-back')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('seat-date')), findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-search')), findsNothing);
+    await _selectArea(tester);
+    expect(find.text('已选座位：二层 01'), findsOneWidget);
+    expect(client.seatCalls, 1);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('seat-date')), findsOneWidget);
+    expect(client.disposeCalls, 0);
+    await _selectArea(tester);
+    expect(find.text('已选座位：二层 01'), findsOneWidget);
+    expect(client.seatCalls, 1);
+  });
+
+  testWidgets('楼层默认首层且缺失楼层单独分组，不混成全部', (tester) async {
+    const unmarked = LibrarySeatArea(
+        id: 'unmarked', name: '未分层阅览区', buildingId: 'library-1');
+    final client = _FakeSeatClient()
+      ..areas = [_secondFloor, _thirdFloor, unmarked];
+    await _openPage(tester, client);
+    expect(find.byKey(const ValueKey('seat-area-area-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-area-area-3')), findsNothing);
+    expect(find.byKey(const ValueKey('seat-area-unmarked')), findsNothing);
+    final third = find.byKey(const ValueKey('library-floor-三层'));
+    await tester.tap(third);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('seat-area-area-2')), findsNothing);
+    expect(find.byKey(const ValueKey('seat-area-area-3')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('library-floor-')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('未标注楼层'), findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-area-unmarked')), findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-area-area-3')), findsNothing);
+  });
+
+  testWidgets('390宽网格三列且每页12座位，翻页搜索不扩成长列表', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _FakeSeatClient()..generatedSeatCount = 25;
+    await _openPage(tester, client);
+    await _selectArea(tester);
+    final tiles = find.byWidgetPredicate((widget) =>
+        widget is CupertinoButton &&
+        widget.key is ValueKey<String> &&
+        (widget.key! as ValueKey<String>).value.startsWith('seat-item-'));
+    expect(tiles, findsNWidgets(12));
+    final first = find.byKey(const ValueKey('seat-item-bulk-0'));
+    final third = find.byKey(const ValueKey('seat-item-bulk-2'));
+    final fourth = find.byKey(const ValueKey('seat-item-bulk-3'));
+    expect(tester.getTopLeft(first).dy, tester.getTopLeft(third).dy);
+    expect(
+        tester.getTopLeft(fourth).dy, greaterThan(tester.getTopLeft(first).dy));
+    expect(tester.widget<CupertinoButton>(third).onPressed, isNull);
+    await _scrollTo(tester, first);
+    await tester.tap(first);
+    await tester.pumpAndSettle();
+    final tabs = find.byKey(const ValueKey('seat-section-tabs'));
+    final bar = find.byKey(const ValueKey('seat-submission-bar'));
+    final tabsY = tester.getTopLeft(tabs).dy;
+    final barY = tester.getTopLeft(bar).dy;
+    final next = find.byKey(const ValueKey('seat-page-next'));
+    await _scrollTo(tester, next);
+    expect(tester.getTopLeft(tabs).dy, tabsY);
+    expect(tester.getTopLeft(bar).dy, barY);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    expect(tiles, findsNWidgets(12));
+    expect(first, findsNothing);
+    expect(find.text('已选座位：A001'), findsOneWidget);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 3'), findsOneWidget);
+    expect(tiles, findsOneWidget);
+    expect(tester.widget<CupertinoButton>(next).onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('seat-page-previous')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    final search = find.byKey(const ValueKey('seat-search'));
+    await _scrollTo(tester, search, delta: -250);
+    await tester.enterText(search, 'A025');
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(tiles, findsOneWidget);
+    expect(find.byKey(const ValueKey('seat-item-bulk-24')), findsOneWidget);
+    expect(find.text('显示更多座位'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('320小屏两倍字体及键盘弹出时没有布局溢出', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final client = _FakeSeatClient()..generatedSeatCount = 25;
+    await _openPage(tester, client, textScale: 2);
+    expect(tester.takeException(), isNull);
+    await _selectArea(tester);
+    expect(tester.takeException(), isNull);
+    final first = find.byKey(const ValueKey('seat-item-bulk-0'));
+    await _scrollTo(tester, first);
+    await tester.tap(first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+    final search = find.byKey(const ValueKey('seat-search'));
+    await _scrollTo(tester, search, delta: -250);
+    await tester.enterText(search, 'A001');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('seat-section-tabs')), findsOneWidget);
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('预约须知独立打开，官网仅在顶部更多菜单中', (tester) async {
+    const rules = '完整须知：按所选阅览区的要求使用座位。';
+    final client = _FakeSeatClient()..rules = rules;
+    await _openPage(tester, client);
+    expect(find.text('打开图书馆官网'), findsNothing);
+    await _selectArea(tester);
+    expect(find.text(rules), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('seat-rules')));
+    await tester.pumpAndSettle();
+    expect(find.text('座位预约须知'), findsOneWidget);
+    expect(find.text(rules), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('seat-more')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoActionSheet), findsOneWidget);
+    expect(find.text('打开图书馆官网'), findsOneWidget);
+    expect(find.text('签到与使用说明'), findsOneWidget);
+  });
+
+  testWidgets('不可用时段仍显示服务端开放原因且不能选座', (tester) async {
+    final client = _FakeSeatClient()
+      ..segmentUnavailableReason = '此日期将在北京时间 07:00 开放预约。';
+    await _openPage(tester, client);
+    await _selectArea(tester);
+    expect(find.text('此日期将在北京时间 07:00 开放预约。'), findsOneWidget);
+    expect(client.seatCalls, 0);
+    expect(find.byKey(const ValueKey('seat-search')), findsNothing);
+    _expectNoSubmitAction(tester);
+  });
+
+  testWidgets('详情刷新保留仍可用的座位和时段', (tester) async {
+    final client = _FakeSeatClient();
+    await _openPage(tester, client);
+    await _selectSeat(tester);
+    await tester.tap(find.byKey(const ValueKey('seat-refresh')));
+    await tester.pumpAndSettle();
+    expect(client.seatCalls, 2);
+    expect(find.byKey(const ValueKey('seat-date')), findsNothing);
+    expect(find.text('已选座位：二层 01'), findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const ValueKey('seat-submit')))
+            .onPressed,
+        isNotNull);
+  });
+
   testWidgets('未登录不能创建真实座位客户端', (tester) async {
     var clientCreations = 0;
     await tester.pumpWidget(CupertinoApp(
@@ -324,21 +544,25 @@ void main() {
       area: _secondFloor,
       date: _secondDate
     ),
-    (key: 'seat-floor', label: '三层', area: _thirdFloor, date: _firstDate),
+    (key: 'library-floor-三层', label: '三层', area: _thirdFloor, date: _firstDate),
   ]) {
     testWidgets('${change.key}变更清除旧座位，新选择使用当前筛选条件', (tester) async {
       final client = _FakeSeatClient();
       await _openPage(tester, client);
       await _selectSeat(tester);
+      await tester.tap(find.byKey(const ValueKey('seat-navigation-back')));
+      await tester.pumpAndSettle();
       final filter = find.byKey(ValueKey(change.key));
       await _scrollTo(tester, filter, delta: -250);
       await tester.tap(filter);
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(
-        of: find.byType(CupertinoActionSheet),
-        matching: find.text(change.label),
-      ));
-      await tester.pumpAndSettle();
+      if (change.key == 'seat-date') {
+        await tester.tap(find.descendant(
+          of: find.byType(CupertinoActionSheet),
+          matching: find.text(change.label),
+        ));
+        await tester.pumpAndSettle();
+      }
 
       expect(find.byKey(const ValueKey('seat-item-area-2-$_firstDate')),
           findsNothing);
@@ -405,6 +629,17 @@ void main() {
     await tester.pump();
     expect(client.submitCalls, 1);
     expect(find.text('确认座位预约'), findsNothing);
+    expect(
+        tester
+            .widget<CupertinoButton>(
+                find.byKey(const ValueKey('seat-navigation-back')))
+            .onPressed,
+        isNull);
+    await tester.binding.handlePopRoute();
+    await tester.tap(find.text('我的座位'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('seat-date')), findsNothing);
+    expect(client.reservationCalls, 0);
 
     pending.complete('预约成功');
     await _pumpDialog(tester);
@@ -437,6 +672,13 @@ void main() {
     expect(client.submitCalls, 1);
     await tester.tap(find.text('预约座位'));
     await tester.pumpAndSettle();
+    _expectNoSubmitAction(tester);
+    await tester.tap(find.byKey(const ValueKey('seat-refresh')));
+    await tester.pumpAndSettle();
+    _expectNoSubmitAction(tester);
+    await tester.tap(find.byKey(const ValueKey('seat-navigation-back')));
+    await tester.pumpAndSettle();
+    await _selectArea(tester);
     _expectNoSubmitAction(tester);
     expect(client.submitCalls, 1);
   });

@@ -577,6 +577,8 @@ void _roomSchemaTests() {
       final rooms =
           await service.loadRooms(buildingId: '3', date: '2026-10-03');
       final room = rooms.firstWhere((room) => room.id == '9');
+      expect(room.floorId, '30');
+      expect(room.floorName, '二层');
       expect(room.description, '二层');
       expect(room.canReserve, isTrue);
       expect(room.availabilityKnown, isFalse);
@@ -589,6 +591,47 @@ void _roomSchemaTests() {
               request.uri.path == '/api/Seminar/tree' ||
               request.uri.path == '/api/Seminar/date'),
           isFalse);
+      expect(client.steps, isEmpty);
+    });
+
+    test('楼层资料缺失时保留房间，不从名称猜测或借用其他馆楼层', () async {
+      final client = _Client();
+      _expectLogin(client);
+      client.expectRequest('POST', '/reserve/index/quickSelect', (_) {
+        return _Response.json({
+          'code': 0,
+          'data': {
+            'storey': [
+              {'id': '30', 'name': '其他馆二层', 'topId': '99'}
+            ],
+            'area': [
+              {
+                'id': 'with-parent',
+                'name': '五层讨论室',
+                'topId': '3',
+                'parentId': '30',
+                'typeCategory': '2',
+              },
+              {
+                'id': 'without-parent',
+                'name': '六层讨论室',
+                'topId': '3',
+                'typeCategory': '2',
+              },
+            ],
+          },
+        });
+      });
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      final rooms =
+          await service.loadRooms(buildingId: '3', date: '2026-10-03');
+      expect(rooms.map((room) => room.id), ['with-parent', 'without-parent']);
+      expect(rooms.map((room) => room.floorId), ['30', '']);
+      expect(rooms.map((room) => room.floorName), ['', '']);
+      expect(rooms.map((room) => room.description), ['', '']);
+      expect(rooms.every((room) => room.canReserve), isTrue);
       expect(client.steps, isEmpty);
     });
 

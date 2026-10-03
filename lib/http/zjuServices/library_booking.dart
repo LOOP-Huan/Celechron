@@ -549,6 +549,8 @@ class LibraryBookingService
     for (final value in _list(data['area'] ?? const [])) {
       final room = _map(value);
       if (_string(room['topId']) != buildingId) continue;
+      final floorId = _string(room['parentId']);
+      final floorName = floors[floorId] ?? '';
       final full = _binaryFlag(room['Fully_Booked']);
       final permission = _binaryFlag(room['is_reducible']);
       final type = _string(room['typeCategory']);
@@ -565,7 +567,9 @@ class LibraryBookingService
         id: _requiredString(room['id']),
         name: _requiredString(room['name']),
         buildingId: buildingId,
-        description: floors[_string(room['parentId'])] ?? '',
+        floorId: floorId,
+        floorName: floorName,
+        description: floorName,
         canReserve: reason == null,
         availabilityKnown: special || full != null || permission != null,
         unavailableReason: reason,

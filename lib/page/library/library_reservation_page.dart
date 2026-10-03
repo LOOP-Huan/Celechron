@@ -5,6 +5,7 @@ import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'library_booking_widgets.dart';
 import 'library_seat_page.dart';
 
 typedef LibraryBookingClientFactory = LibraryBookingClient Function(
@@ -33,6 +34,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
   final _content = TextEditingController();
   final _mobile = TextEditingController();
   final _participantId = TextEditingController();
+  final _scrollController = ScrollController();
   LibraryBookingClient? _client;
   String? _username;
   String? _password;
@@ -51,6 +53,8 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
   int? _start;
   int? _end;
   int _section = 0;
+  int _step = 0;
+  String? _floorId;
   int _reservationPage = 0;
   bool _hasMore = true;
   bool _busy = false;
@@ -105,6 +109,8 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
       _reservations = [];
       _participants.clear();
       _availability = null;
+      _room = null;
+      _step = 0;
       _error = null;
     });
     return false;
@@ -117,6 +123,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     _content.dispose();
     _mobile.dispose();
     _participantId.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -163,7 +170,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
             buildingId: _building!.id,
             date: _date!,
           );
-          if (_checkAccount()) setState(() => _rooms = rooms);
+          if (_checkAccount()) setState(() => _setRooms(rooms));
         }
       },
           () => unawaited(_loadCatalog(
@@ -171,8 +178,14 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
 
   void _resetRoom() {
     _rooms = [];
+    _floorId = null;
+    _clearSelection();
+  }
+
+  void _clearSelection() {
     _room = null;
     _availability = null;
+    _step = 0;
     _resetDraft();
   }
 
@@ -184,6 +197,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     _titleChoice = null;
     _title.clear();
     _content.clear();
+    _isPublic = true;
     _submissionUncertain = false;
   }
 
@@ -194,16 +208,22 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
           buildingId: _building!.id,
           date: _date!,
         );
-        if (_checkAccount()) setState(() => _rooms = rooms);
+        if (_checkAccount()) setState(() => _setRooms(rooms));
       }, () => unawaited(_loadRooms()));
 
-  Future<void> _loadAvailability(LibraryRoom room) => _read((client) async {
+  Future<void> _loadAvailability(LibraryRoom room,
+          {bool preserveDraft = false}) =>
+      _read((client) async {
         if (_date == null) return;
         setState(() {
           _room = room;
-          _availability = null;
-          _resetDraft();
+          if (!preserveDraft) {
+            _availability = null;
+            _resetDraft();
+            _step = 1;
+          }
         });
+        if (!preserveDraft) _scrollToTop();
         final availability = await client.loadAvailability(
           room: room,
           date: _date!,
@@ -212,13 +232,118 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
         setState(() {
           _availability = availability;
           if (_mobile.text.isEmpty) _mobile.text = availability.mobile;
+          final previousChoice = _titleChoice;
+          if (previousChoice != null) {
+            _titleChoice = availability.titleChoices
+                .where((choice) =>
+                    choice.id == previousChoice.id &&
+                    choice.title == previousChoice.title)
+                .firstOrNull;
+          }
+          if (preserveDraft &&
+              _start != null &&
+              _end != null &&
+              availability.isRangeAvailable(_start!, _end!)) {
+            return;
+          }
+          _participants.clear();
           final starts = _startOptions(availability);
           _start = starts.firstOrNull;
-          if (_start != null) {
-            _end = _endOptions(availability, _start!).firstOrNull;
-          }
+          _end = _start == null
+              ? null
+              : _endOptions(availability, _start!).firstOrNull;
+          if (_step == 2) _step = 1;
         });
-      }, () => unawaited(_loadAvailability(room)));
+      },
+          () =>
+              unawaited(_loadAvailability(room, preserveDraft: preserveDraft)));
+
+  String _floorKey(LibraryRoom room) => room.floorName.trim().isEmpty
+      ? 'unassigned'
+      : room.floorId.isNotEmpty
+          ? room.floorId
+          : 'name:${room.floorName.trim()}';
+
+  List<LibraryFloorOption> get _floors {
+    final groups = <String, List<LibraryRoom>>{};
+    for (final room in _rooms) {
+      groups.putIfAbsent(_floorKey(room), () => []).add(room);
+    }
+    return groups.entries
+        .map((entry) => LibraryFloorOption(
+              id: entry.key,
+              label: entry.value.first.floorName.trim().isEmpty
+                  ? '未标注楼层'
+                  : entry.value.first.floorName.trim(),
+              count: entry.value.length,
+            ))
+        .toList();
+  }
+
+  void _setRooms(List<LibraryRoom> rooms) {
+    _rooms = rooms;
+    final floors = _floors;
+    if (!floors.any((floor) => floor.id == _floorId)) {
+      _floorId = floors.firstOrNull?.id;
+    }
+  }
+
+  void _scrollToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+  }
+
+  void _showStep(int step) {
+    if (_busy) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _step = step;
+      _error = null;
+    });
+    _scrollToTop();
+  }
+
+  void _previousStep() {
+    if (!_busy && _section == 0 && _step > 0) _showStep(_step - 1);
+  }
+
+  void _chooseFloor(String id) {
+    if (_busy || id == _floorId) return;
+    setState(() {
+      _floorId = id;
+      _clearSelection();
+    });
+    _scrollToTop();
+  }
+
+  void _selectRoom(LibraryRoom room) {
+    if (_busy) return;
+    if (_room?.id == room.id && _availability != null) {
+      _showStep(1);
+      return;
+    }
+    unawaited(_loadAvailability(room));
+  }
+
+  bool get _canContinue =>
+      _availability != null &&
+      _start != null &&
+      _end != null &&
+      _availability!.isRangeAvailable(_start!, _end!);
+
+  void _refresh() {
+    if (_busy || _accessMessage != null) return;
+    if (_section == 1) {
+      unawaited(_loadReservations());
+    } else if (_step > 0 && _room != null) {
+      unawaited(_loadAvailability(_room!, preserveDraft: true));
+    } else {
+      unawaited(_loadCatalog(date: _date, preferredBuildingId: _building?.id));
+    }
+  }
 
   List<int> _startOptions(LibraryRoomAvailability availability) {
     if (!availability.canReserve || availability.unsupportedReason != null) {
@@ -486,9 +611,9 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
       if (!_checkAccount()) return;
       setState(() {
         _section = 1;
-        _availability = null;
-        _resetDraft();
+        _clearSelection();
       });
+      _scrollToTop();
       refreshReservations = true;
       await _message('预约已提交', message.isEmpty ? '请在「我的预约」查看当前状态。' : message);
     } on Object catch (error) {
@@ -498,6 +623,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
           _submissionUncertain = true;
           _section = 1;
         });
+        _scrollToTop();
         refreshReservations = true;
         await _message('预约结果待确认', '未能确认本次提交结果。请先查看「我的预约」确认结果，避免重复预约。');
       } else {
@@ -541,92 +667,166 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     if (refreshReservations && mounted) await _loadReservations();
   }
 
+  Future<void> _showMore() async {
+    if (_busy) return;
+    final choice = await _choose('更多', ['seat', 'official'],
+        (value) => value == 'seat' ? '切换到座位预约' : '打开图书馆官网');
+    if (!mounted || _busy || choice == null) return;
+    if (choice == 'official') {
+      await _openOfficialSite();
+    } else {
+      await Navigator.of(context).push(CupertinoPageRoute<void>(
+        builder: (_) => LibrarySeatPage(
+          scholar: widget.scholar,
+          seatClientFactory: widget.seatClientFactory,
+        ),
+      ));
+    }
+  }
+
+  void _openRules() {
+    if (_busy || _availability == null) return;
+    final rules = _availability!.rules;
+    Navigator.of(context).push(CupertinoPageRoute<void>(
+      builder: (_) => CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(middle: Text('预约须知')),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Text(rules),
+          ),
+        ),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('研讨间预约'),
-        trailing: _busy
-            ? const CupertinoActivityIndicator()
-            : CupertinoButton(
-                key: const ValueKey('library-refresh'),
-                padding: EdgeInsets.zero,
-                onPressed: _accessMessage != null
-                    ? null
-                    : () => _section == 1
-                        ? unawaited(_loadReservations())
-                        : _room != null
-                            ? unawaited(_loadAvailability(_room!))
-                            : unawaited(_loadCatalog()),
-                child: const Icon(CupertinoIcons.refresh, size: 22),
-              ),
-      ),
-      backgroundColor: CupertinoColors.systemGroupedBackground,
-      child: SafeArea(
-        child: _accessMessage != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Text(_accessMessage!, textAlign: TextAlign.center),
-                ),
-              )
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 36),
-                children: [
-                  CupertinoSlidingSegmentedControl<int>(
-                    key: const ValueKey('library-section-tabs'),
-                    groupValue: _section,
-                    children: const {
-                      0: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('预约研讨间'),
-                      ),
-                      1: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('我的预约'),
-                      ),
-                    },
-                    onValueChanged: (value) {
-                      if (_busy || value == null || value == _section) return;
-                      setState(() {
-                        _section = value;
-                        _error = null;
-                      });
-                      if (value == 1) unawaited(_loadReservations());
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  if (_error != null) _errorCard(),
-                  if (_busy)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Text('正在处理，请稍候…', textAlign: TextAlign.center),
-                    ),
-                  if (_section == 0)
-                    ..._bookingWidgets()
-                  else
-                    ..._mineWidgets(),
-                  CupertinoButton(
-                    key: const ValueKey('library-seat-entry'),
+    final hasPreviousStep =
+        _accessMessage == null && _section == 0 && _step > 0;
+    return PopScope<void>(
+      canPop: !_busy && !hasPreviousStep,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !_busy) _previousStep();
+      },
+      child: CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          middle: const Text('研讨间预约'),
+          automaticallyImplyLeading: false,
+          leading: hasPreviousStep || Navigator.of(context).canPop()
+              ? Semantics(
+                  label: hasPreviousStep ? '返回上一步' : '返回',
+                  child: CupertinoButton(
+                    key: const ValueKey('library-navigation-back'),
+                    padding: EdgeInsets.zero,
                     onPressed: _busy
                         ? null
-                        : () => Navigator.of(context).push(
-                              CupertinoPageRoute<void>(
-                                builder: (_) => LibrarySeatPage(
-                                  scholar: widget.scholar,
-                                  seatClientFactory: widget.seatClientFactory,
-                                ),
-                              ),
-                            ),
-                    child: const Text('切换到座位预约'),
+                        : hasPreviousStep
+                            ? _previousStep
+                            : () => Navigator.of(context).maybePop(),
+                    child: const Icon(CupertinoIcons.back),
                   ),
-                  _note('需要附件的特殊申请和成员邀请可在图书馆官网处理，官网可能需要重新登录。'),
-                  CupertinoButton(
-                    onPressed: _busy ? null : _openOfficialSite,
-                    child: const Text('打开图书馆官网'),
+                )
+              : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: CupertinoActivityIndicator(),
+                )
+              else
+                Semantics(
+                  label: '刷新',
+                  child: CupertinoButton(
+                    key: const ValueKey('library-refresh'),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    onPressed: _accessMessage == null ? _refresh : null,
+                    child: const Icon(CupertinoIcons.refresh, size: 22),
                   ),
-                ],
+                ),
+              Semantics(
+                label: '更多',
+                child: CupertinoButton(
+                  key: const ValueKey('library-more'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  onPressed: _busy ? null : _showMore,
+                  child: const Icon(CupertinoIcons.ellipsis, size: 22),
+                ),
               ),
+            ],
+          ),
+        ),
+        backgroundColor: CupertinoColors.systemGroupedBackground,
+        child: SafeArea(
+          child: _accessMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(_accessMessage!, textAlign: TextAlign.center),
+                  ),
+                )
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: CupertinoSlidingSegmentedControl<int>(
+                          key: const ValueKey('library-section-tabs'),
+                          groupValue: _section,
+                          children: const {
+                            0: Text('预约研讨间'),
+                            1: Text('我的预约'),
+                          },
+                          onValueChanged: (value) {
+                            if (_busy || value == null || value == _section) {
+                              return;
+                            }
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            setState(() {
+                              _section = value;
+                              _error = null;
+                            });
+                            _scrollToTop();
+                            if (value == 1) unawaited(_loadReservations());
+                          },
+                        ),
+                      ),
+                    ),
+                    if (_section == 0)
+                      LibraryStepHeader(
+                        key: const ValueKey('library-step-header'),
+                        steps: const ['选研讨间', '选时段', '填申请'],
+                        currentStep: _step,
+                        showBackButton: false,
+                        onBack: _busy || _step == 0 ? null : _previousStep,
+                      ),
+                    Expanded(
+                      child: ListView(
+                        key: const ValueKey('library-step-content'),
+                        controller: _scrollController,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                        children: [
+                          if (_error != null) _errorCard(),
+                          if (_section == 1)
+                            ..._mineWidgets()
+                          else if (_step == 0)
+                            ..._directoryWidgets()
+                          else if (_step == 1)
+                            ..._timeWidgets()
+                          else
+                            ..._formWidgets(),
+                        ],
+                      ),
+                    ),
+                    if (_section == 0 && _step > 0) _stepAction(),
+                  ],
+                ),
+        ),
       ),
     );
   }
@@ -656,17 +856,19 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
 
   Widget _note(String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Text(
-          value,
-          style: const TextStyle(
-            color: CupertinoColors.secondaryLabel,
-            fontSize: 13,
-          ),
-        ),
+        child: Text(value,
+            style: TextStyle(
+              color: CupertinoDynamicColor.resolve(
+                  CupertinoColors.secondaryLabel, context),
+              fontSize: 13,
+            )),
       );
 
   Widget _errorCard() => _panel([
-        Text(_error!, style: const TextStyle(color: CupertinoColors.systemRed)),
+        Text(_error!,
+            style: TextStyle(
+                color: CupertinoDynamicColor.resolve(
+                    CupertinoColors.systemRed, context))),
         CupertinoButton(
           key: const ValueKey('library-retry'),
           onPressed: _busy ? null : _retry,
@@ -680,18 +882,16 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
         key: ValueKey(key),
         padding: const EdgeInsets.symmetric(vertical: 12),
         onPressed: _busy ? null : onPressed,
-        child: Row(
-          children: [
-            Text(label, style: CupertinoTheme.of(context).textTheme.textStyle),
-            const SizedBox(width: 12),
-            Expanded(child: Text(value, textAlign: TextAlign.right)),
-            const SizedBox(width: 6),
-            const Icon(CupertinoIcons.chevron_down, size: 14),
-          ],
-        ),
+        child: Row(children: [
+          Text(label, style: CupertinoTheme.of(context).textTheme.textStyle),
+          const SizedBox(width: 12),
+          Expanded(child: Text(value, textAlign: TextAlign.right)),
+          const SizedBox(width: 6),
+          const Icon(CupertinoIcons.chevron_down, size: 14),
+        ]),
       );
 
-  List<Widget> _bookingWidgets() {
+  List<Widget> _directoryWidgets() {
     final catalog = _catalog;
     if (catalog == null) return [];
     if (catalog.buildings.isEmpty || catalog.dates.isEmpty) {
@@ -699,179 +899,194 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
         _panel([const Text('图书馆目前没有开放可预约的馆区或日期。')])
       ];
     }
-    final availability = _availability;
+    final floors = _floors;
+    final rooms = _rooms.where((room) => _floorKey(room) == _floorId);
     return [
       _panel([
         _selection('library-building', '馆区', _building?.name ?? '请选择',
             _chooseBuilding),
         _selection('library-date', '日期', _date ?? '请选择', _chooseDate),
-        _note('可选日期与空闲情况由图书馆实时提供。'),
       ]),
+      if (floors.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: LibraryFloorTabs(
+            key: const ValueKey('library-floor-tabs'),
+            floors: floors,
+            selectedId: _floorId!,
+            onChanged: _busy ? null : _chooseFloor,
+          ),
+        ),
       _panel([
-        _heading('选择研讨间'),
-        if (_rooms.isEmpty && !_busy) const Text('此馆区在所选日期暂无可预约研讨间。'),
-        for (final room in _rooms)
+        if (rooms.isEmpty && !_busy && _error == null)
+          const Text('所选楼层在此日期暂无可预约研讨间。'),
+        for (final room in rooms)
           CupertinoButton(
             key: ValueKey('library-room-${room.id}'),
             padding: const EdgeInsets.symmetric(vertical: 12),
             onPressed: _busy || (!room.canReserve && room.availabilityKnown)
                 ? null
-                : () => unawaited(_loadAvailability(room)),
-            child: Row(
-              children: [
-                Expanded(
+                : () => _selectRoom(room),
+            child: Row(children: [
+              Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(room.name),
-                      if (!room.availabilityKnown)
-                        _note('查看可用时段')
-                      else if (!room.canReserve)
-                        _note(room.unavailableReason ?? '所选日期暂不可预约'),
-                    ],
-                  ),
-                ),
-                Icon(
-                  _room?.id == room.id
-                      ? CupertinoIcons.check_mark_circled_solid
-                      : CupertinoIcons.chevron_forward,
-                  size: 20,
-                ),
-              ],
-            ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(room.name),
+                  if (!room.availabilityKnown)
+                    _note('查看可用时段')
+                  else if (!room.canReserve)
+                    _note(room.unavailableReason ?? '所选日期暂不可预约'),
+                ],
+              )),
+              Icon(
+                _room?.id == room.id
+                    ? CupertinoIcons.check_mark_circled_solid
+                    : CupertinoIcons.chevron_forward,
+                size: 20,
+              ),
+            ]),
           ),
       ]),
-      if (availability != null) ..._availabilityWidgets(availability),
     ];
   }
 
-  List<Widget> _availabilityWidgets(LibraryRoomAvailability availability) {
-    final unsupported = availability.unsupportedReason ??
-        (availability.requiresAttachment ? '此研讨间要求上传附件，当前暂不支持预约。' : null);
+  Widget _rulesLink() => CupertinoButton(
+        key: const ValueKey('library-rules'),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.centerLeft,
+        onPressed: _busy ? null : _openRules,
+        child: const Text('查看预约须知'),
+      );
+
+  List<Widget> _timeWidgets() {
+    final room = _room;
+    if (room == null) return [];
+    final availability = _availability;
+    final unsupported = availability?.unsupportedReason ??
+        (availability?.requiresAttachment == true
+            ? '此研讨间要求上传附件，请通过图书馆官网申请。'
+            : null);
+    return [
+      _panel([
+        _heading(room.name),
+        Text(
+            '${_building?.name ?? ''} · ${room.floorName.isEmpty ? '未标注楼层' : room.floorName}'),
+        _note(_date ?? ''),
+        if (room.description.isNotEmpty &&
+            room.description.trim() != room.floorName.trim())
+          _note(room.description),
+        if (availability?.rules.isNotEmpty == true) _rulesLink(),
+      ]),
+      if (availability != null)
+        _panel([
+          if (unsupported != null)
+            Text(unsupported)
+          else if (!availability.canReserve)
+            Text(availability.unavailableReason ?? '此研讨间在所选日期暂不可预约。')
+          else if (_start == null || _end == null)
+            const Text('此日期暂无符合要求的空闲时段，请换一天或选择其他房间。')
+          else ...[
+            _selection('library-start', '开始时间', _time(_start!), _chooseStart),
+            _selection('library-end', '结束时间', _time(_end!), _chooseEnd),
+            _note('预约时长：${_end! - _start!} 分钟'),
+          ],
+        ]),
+    ];
+  }
+
+  Widget _stepAction() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: BoxDecoration(
+          color: CupertinoDynamicColor.resolve(
+              CupertinoColors.systemGroupedBackground, context),
+          border: Border(
+              top: BorderSide(
+                  color: CupertinoDynamicColor.resolve(
+                      CupertinoColors.separator, context))),
+        ),
+        child: CupertinoButton.filled(
+          key: ValueKey(_step == 1 ? 'library-next' : 'library-submit'),
+          onPressed:
+              _busy || !_canContinue || (_step == 2 && _submissionUncertain)
+                  ? null
+                  : _step == 1
+                      ? () => _showStep(2)
+                      : _submit,
+          child: Text(_step == 1 ? '填写预约信息' : '确认预约信息'),
+        ),
+      );
+
+  List<Widget> _formWidgets() {
+    final availability = _availability;
+    if (availability == null || _room == null) return [];
     final count = _participants.length + 1;
     final maxParticipants = availability.maxParticipants;
     return [
       _panel([
         _heading(_room!.name),
-        if (_room!.description.isNotEmpty) _note(_room!.description),
-        if (availability.rules.isNotEmpty) ...[
-          Text(
-            availability.rules,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              color: CupertinoColors.secondaryLabel,
+        Text('$_date ${_time(_start!)}–${_time(_end!)}'),
+        if (availability.rules.isNotEmpty) _rulesLink(),
+      ]),
+      _panel([
+        _heading('参与成员'),
+        Text('共 $count 人（含本人）'),
+        _note(maxParticipants > 0
+            ? '人数要求：${availability.minParticipants}–$maxParticipants 人'
+            : '至少 ${availability.minParticipants} 人'),
+        for (final participant in _participants)
+          Row(children: [
+            Expanded(child: Text(participant.name)),
+            CupertinoButton(
+              onPressed: _busy
+                  ? null
+                  : () => setState(() => _participants.remove(participant)),
+              child: const Text('移除'),
             ),
+          ]),
+        if (maxParticipants <= 0 || count < maxParticipants) ...[
+          CupertinoTextField(
+            key: const ValueKey('library-participant-id'),
+            controller: _participantId,
+            enabled: !_busy,
+            placeholder: '成员学工号',
+            keyboardType: TextInputType.text,
+            padding: const EdgeInsets.all(12),
+            onSubmitted: (_) => unawaited(_addParticipant()),
           ),
           CupertinoButton(
-            key: const ValueKey('library-rules'),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            onPressed: () => Navigator.of(context).push(
-              CupertinoPageRoute<void>(
-                builder: (context) => CupertinoPageScaffold(
-                  navigationBar: const CupertinoNavigationBar(
-                    middle: Text('预约须知'),
-                  ),
-                  child: SafeArea(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(availability.rules),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            child: const Text('查看完整预约须知'),
+            key: const ValueKey('library-add-participant'),
+            onPressed: _busy ? null : _addParticipant,
+            child: const Text('添加成员'),
           ),
-        ],
-        if (unsupported != null)
-          Text(unsupported)
-        else if (!availability.canReserve)
-          Text(availability.unavailableReason ?? '此研讨间在所选日期暂不可预约。')
-        else if (_start == null || _end == null)
-          const Text('此日期暂无符合要求的空闲时段，请换一天或选择其他房间。')
-        else ...[
-          _selection('library-start', '开始时间', _time(_start!), _chooseStart),
-          _selection('library-end', '结束时间', _time(_end!), _chooseEnd),
-          _note('预约时长：${_end! - _start!} 分钟。调整时段后需重新添加参与成员。'),
         ],
       ]),
-      if (unsupported == null &&
-          availability.canReserve &&
-          _start != null &&
-          _end != null) ...[
-        _panel([
-          _heading('参与成员'),
-          Text('共 $count 人（含本人）'),
-          _note(maxParticipants > 0
-              ? '人数要求：${availability.minParticipants}–$maxParticipants 人，包含预约人。'
-              : '至少 ${availability.minParticipants} 人，包含预约人。'),
-          for (final participant in _participants)
-            Row(
-              children: [
-                Expanded(child: Text(participant.name)),
-                CupertinoButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() => _participants.remove(participant)),
-                  child: const Text('移除'),
-                ),
-              ],
-            ),
-          if (maxParticipants <= 0 || count < maxParticipants) ...[
-            CupertinoTextField(
-              key: const ValueKey('library-participant-id'),
-              controller: _participantId,
-              enabled: !_busy,
-              placeholder: '成员学工号',
-              keyboardType: TextInputType.text,
-              padding: const EdgeInsets.all(12),
-              onSubmitted: (_) => unawaited(_addParticipant()),
-            ),
-            CupertinoButton(
-              key: const ValueKey('library-add-participant'),
-              onPressed: _busy ? null : _addParticipant,
-              child: const Text('添加成员'),
-            ),
-          ],
-        ]),
-        _panel([
-          _heading('预约信息'),
-          if (availability.titleChoices.isNotEmpty)
-            _selection('library-title', '申请主题', _titleChoice?.title ?? '请选择',
-                () async {
-              final value = await _choose('选择申请主题', availability.titleChoices,
-                  (choice) => choice.title);
-              if (mounted && value != null) {
-                setState(() => _titleChoice = value);
-              }
-            })
-          else if (availability.titleRequired)
-            _field('library-title', '申请主题', _title),
-          _field('library-content', '申请内容', _content, maxLines: 3),
-          _field('library-mobile', '联系电话', _mobile,
-              keyboardType: TextInputType.phone),
-          Row(
-            children: [
-              const Expanded(child: Text('公开预约')),
-              CupertinoSwitch(
-                key: const ValueKey('library-public'),
-                value: _isPublic,
-                onChanged:
-                    _busy ? null : (value) => setState(() => _isPublic = value),
-              ),
-            ],
-          ),
-          if (_submissionUncertain) _note('上一条预约结果尚未确认，请先查看「我的预约」，不要重复提交。'),
-          const SizedBox(height: 12),
-          CupertinoButton.filled(
-            key: const ValueKey('library-submit'),
-            onPressed: _busy || _submissionUncertain ? null : _submit,
-            child: const Text('确认预约信息'),
+      _panel([
+        _heading('预约信息'),
+        if (availability.titleChoices.isNotEmpty)
+          _selection('library-title', '申请主题', _titleChoice?.title ?? '请选择',
+              () async {
+            final value = await _choose(
+                '选择申请主题', availability.titleChoices, (choice) => choice.title);
+            if (mounted && value != null) setState(() => _titleChoice = value);
+          })
+        else if (availability.titleRequired)
+          _field('library-title', '申请主题', _title),
+        _field('library-content', '申请内容', _content, maxLines: 3),
+        _field('library-mobile', '联系电话', _mobile,
+            keyboardType: TextInputType.phone),
+        Row(children: [
+          const Expanded(child: Text('公开预约')),
+          CupertinoSwitch(
+            key: const ValueKey('library-public'),
+            value: _isPublic,
+            onChanged:
+                _busy ? null : (value) => setState(() => _isPublic = value),
           ),
         ]),
-      ],
+        if (_submissionUncertain) _note('上一条预约结果尚未确认，请先查看「我的预约」，不要重复提交。'),
+      ]),
     ];
   }
 
@@ -917,8 +1132,10 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
               CupertinoButton(
                 key: ValueKey('library-cancel-${reservation.id}'),
                 onPressed: _busy ? null : () => _cancel(reservation),
-                child: const Text('取消预约',
-                    style: TextStyle(color: CupertinoColors.systemRed)),
+                child: Text('取消预约',
+                    style: TextStyle(
+                        color: CupertinoDynamicColor.resolve(
+                            CupertinoColors.systemRed, context))),
               )
             else if (reservation.cancellationReason?.isNotEmpty ?? false)
               _note(reservation.cancellationReason!),

@@ -16,6 +16,22 @@ const _room = LibraryRoom(
   id: 'test-room',
   name: '测试研讨间 201',
   buildingId: 'test-building',
+  floorId: 'floor-2',
+  floorName: '二层',
+);
+const _sameFloorRoom = LibraryRoom(
+  id: 'room-202',
+  name: '测试研讨间 202',
+  buildingId: 'test-building',
+  floorId: 'floor-2',
+  floorName: '二层',
+);
+const _thirdFloorRoom = LibraryRoom(
+  id: 'room-301',
+  name: '测试研讨间 301',
+  buildingId: 'test-building',
+  floorId: 'floor-3',
+  floorName: '三层',
 );
 
 class _FakeLibraryBookingClient implements LibraryBookingClient {
@@ -48,6 +64,8 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   final List<({LibraryRoom room, String date})> availabilityQueries = [];
   bool detailCanReserve = true;
   String? detailUnavailableReason;
+  String rules = '';
+  List<LibraryTitleChoice> titleChoices = const [];
   Completer<LibraryCatalog>? pendingCatalog;
   Completer<String>? pendingSubmission;
   LibraryBookingDraft? submittedDraft;
@@ -61,6 +79,8 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
         minDurationMinutes: 30,
         maxDurationMinutes: 4 * 60,
         titleRequired: true,
+        titleChoices: titleChoices,
+        rules: rules,
         mobile: '13800000000',
         canReserve: detailCanReserve,
         unavailableReason: detailUnavailableReason,
@@ -151,11 +171,14 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   void dispose() => disposeCalls++;
 }
 
-Future<void> _openPage(
-  WidgetTester tester,
-  _FakeLibraryBookingClient client,
-) async {
+Future<void> _openPage(WidgetTester tester, _FakeLibraryBookingClient client,
+    {double textScale = 1}) async {
   await tester.pumpWidget(CupertinoApp(
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child!,
+    ),
     home: LibraryReservationPage(
       scholar: _scholar(),
       clientFactory: (username, password) {
@@ -169,12 +192,12 @@ Future<void> _openPage(
 }
 
 Future<void> _prepareDraft(WidgetTester tester) async {
+  await _scrollTo(tester, find.byKey(const ValueKey('library-room-test-room')));
   await tester.tap(find.byKey(const ValueKey('library-room-test-room')));
   await tester.pumpAndSettle();
-  await tester.scrollUntilVisible(
-    find.byKey(const ValueKey('library-title')),
-    300,
-  );
+  await tester.tap(find.byKey(const ValueKey('library-next')));
+  await tester.pumpAndSettle();
+  await _scrollTo(tester, find.byKey(const ValueKey('library-title')));
   await tester.enterText(
     find.byKey(const ValueKey('library-title')),
     '课程研讨',
@@ -262,6 +285,196 @@ void main() {
     expect(find.textContaining('图书馆服务暂时不可用'), findsNothing);
   });
 
+  testWidgets('目录默认首层，仅显示选中楼层且合并未标注楼层', (tester) async {
+    final client = _FakeLibraryBookingClient()
+      ..rooms = const [
+        _room,
+        _sameFloorRoom,
+        _thirdFloorRoom,
+        LibraryRoom(
+            id: 'unknown-1',
+            name: '未知楼层 A',
+            buildingId: 'test-building',
+            floorId: 'internal-1'),
+        LibraryRoom(
+            id: 'unknown-2',
+            name: '未知楼层 B',
+            buildingId: 'test-building',
+            floorId: 'internal-2'),
+      ];
+    await _openPage(tester, client);
+    expect(
+        find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-room-room-202')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-room-room-301')), findsNothing);
+    expect(find.text('全部楼层'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('library-floor-floor-3')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('library-room-room-301')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-room-test-room')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('library-floor-unassigned')));
+    await tester.pumpAndSettle();
+    expect(find.text('未标注楼层 · 2'), findsOneWidget);
+    expect(find.text('未知楼层 A'), findsOneWidget);
+    expect(find.text('未知楼层 B'), findsOneWidget);
+    expect(find.textContaining('internal-'), findsNothing);
+  });
+
+  testWidgets('界面与系统返回保留时段和申请内容，重新进入同房间不丢草稿', (tester) async {
+    final client = _FakeLibraryBookingClient();
+    await _openPage(tester, client);
+    await _prepareDraft(tester);
+    final tabs = find.byKey(const ValueKey('library-section-tabs'));
+    final tabPosition = tester.getTopLeft(tabs);
+    await _scrollTo(tester, find.byKey(const ValueKey('library-mobile')));
+    expect(tester.getTopLeft(tabs), tabPosition);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('library-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-title')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('library-room-test-room')));
+    await tester.pumpAndSettle();
+    expect(client.availabilityCalls, 1);
+    await tester.tap(find.byKey(const ValueKey('library-next')));
+    await tester.pumpAndSettle();
+    await _scrollTo(tester, find.byKey(const ValueKey('library-title')));
+    expect(
+        tester
+            .widget<CupertinoTextField>(
+                find.byKey(const ValueKey('library-title')))
+            .controller!
+            .text,
+        '课程研讨');
+    expect(
+        tester
+            .widget<CupertinoTextField>(
+                find.byKey(const ValueKey('library-content')))
+            .controller!
+            .text,
+        '课程项目小组讨论');
+  });
+
+  for (final destination in [_sameFloorRoom, _thirdFloorRoom]) {
+    testWidgets('换到${destination.name}清除旧房间申请内容', (tester) async {
+      final client = _FakeLibraryBookingClient()
+        ..rooms = const [_room, _sameFloorRoom, _thirdFloorRoom];
+      await _openPage(tester, client);
+      await _prepareDraft(tester);
+      for (var step = 0; step < 2; step++) {
+        await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+        await tester.pumpAndSettle();
+      }
+      if (destination.floorId != _room.floorId) {
+        await tester
+            .tap(find.byKey(ValueKey('library-floor-${destination.floorId}')));
+        await tester.pumpAndSettle();
+      }
+      final room = find.byKey(ValueKey('library-room-${destination.id}'));
+      await _scrollTo(tester, room);
+      await tester.tap(room);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('library-next')));
+      await tester.pumpAndSettle();
+      await _scrollTo(tester, find.byKey(const ValueKey('library-title')));
+      expect(
+          tester
+              .widget<CupertinoTextField>(
+                  find.byKey(const ValueKey('library-title')))
+              .controller!
+              .text,
+          isEmpty);
+      expect(
+          tester
+              .widget<CupertinoTextField>(
+                  find.byKey(const ValueKey('library-content')))
+              .controller!
+              .text,
+          isEmpty);
+      expect(client.availabilityQueries.last.room.id, destination.id);
+      expect(client.submitCalls, 0);
+    });
+  }
+
+  testWidgets('须知全文只在独立页面显示，返回后仍保留所选时段', (tester) async {
+    const rules = '预约使用规则\n请按时到馆签到\n离开时请保持安静并带走物品';
+    final client = _FakeLibraryBookingClient()..rules = rules;
+    await _openPage(tester, client);
+    await tester.tap(find.byKey(const ValueKey('library-room-test-room')));
+    await tester.pumpAndSettle();
+    expect(find.text(rules), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('library-rules')));
+    await tester.pumpAndSettle();
+    expect(find.text(rules), findsOneWidget);
+    Navigator.of(tester.element(find.text(rules))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('library-start')), findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const ValueKey('library-next')))
+            .onPressed,
+        isNotNull);
+  });
+
+  testWidgets('小屏放大文字时三步可操作且顶部预约切换保持可见', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _FakeLibraryBookingClient();
+    await _openPage(tester, client, textScale: 1.5);
+    expect(tester.takeException(), isNull);
+    final tabs = find.byKey(const ValueKey('library-section-tabs'));
+    final position = tester.getTopLeft(tabs);
+    await _prepareDraft(tester);
+    expect(tester.takeException(), isNull);
+    expect(tester.getTopLeft(tabs), position);
+    expect(find.byKey(const ValueKey('library-submit')).hitTestable(),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('library-next')).hitTestable(),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('刷新后取消的固定主题不会覆盖新填写的自由主题', (tester) async {
+    const choice = LibraryTitleChoice(id: 'old-topic', title: '旧固定主题');
+    final client = _FakeLibraryBookingClient()..titleChoices = [choice];
+    await _openPage(tester, client);
+    await tester.tap(find.byKey(const ValueKey('library-room-test-room')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('library-next')));
+    await tester.pumpAndSettle();
+    final title = find.byKey(const ValueKey('library-title'));
+    await _scrollTo(tester, title);
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('旧固定主题').last);
+    await tester.pumpAndSettle();
+    client.titleChoices = [];
+    await tester.tap(find.byKey(const ValueKey('library-refresh')));
+    await tester.pumpAndSettle();
+    expect(client.catalogCalls, 1);
+    expect(client.availabilityCalls, 2);
+    await _scrollTo(tester, title);
+    await tester.enterText(title, '刷新后填写的主题');
+    await tester.enterText(
+        find.byKey(const ValueKey('library-content')), '课程项目小组讨论');
+    await tester.tap(find.byKey(const ValueKey('library-submit')));
+    await _pumpDialog(tester);
+    await tester.tap(find.text('提交预约'));
+    await _pumpDialog(tester);
+    expect(client.submittedDraft?.title, '刷新后填写的主题');
+    expect(client.submittedDraft?.titleChoice, isNull);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('目录未提供预约状态时仍可查看真实可用时段', (tester) async {
     const unknownRoom = LibraryRoom(
       id: 'unknown-room',
@@ -324,6 +537,11 @@ void main() {
     expect(find.text(reason), findsOneWidget);
     expect(find.text('当前账号无法预约此研讨间。'), findsNothing);
     expect(find.byKey(const ValueKey('library-submit')), findsNothing);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const ValueKey('library-next')))
+            .onPressed,
+        isNull);
     expect(client.submitCalls, 0);
   });
 
@@ -336,6 +554,10 @@ void main() {
     final client = _FakeLibraryBookingClient()..secondDateRooms = [nextRoom];
     await _openPage(tester, client);
     await _prepareDraft(tester);
+    await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+    await tester.pumpAndSettle();
     final pending = Completer<LibraryCatalog>();
     client.pendingCatalog = pending;
     addTearDown(() {
@@ -431,6 +653,18 @@ void main() {
     expect(client.submitCalls, 1);
     final submit = find.byKey(const ValueKey('library-submit'));
     expect(tester.widget<CupertinoButton>(submit).onPressed, isNull);
+    expect(
+        tester
+            .widget<CupertinoButton>(
+                find.byKey(const ValueKey('library-navigation-back')))
+            .onPressed,
+        isNull);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(submit, findsOneWidget);
+    await tester.tap(find.text('我的预约'));
+    await tester.pump();
+    expect(client.reservationCalls, 0);
     await tester.ensureVisible(submit);
     await tester.pump();
     await tester.tap(submit);
@@ -445,6 +679,11 @@ void main() {
     expect(client.submittedDraft?.room.id, _room.id);
     expect(client.submittedDraft?.content, '课程项目小组讨论');
     expect(client.reservationCalls, greaterThanOrEqualTo(1));
+    await tester.tap(find.text('预约研讨间'));
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-submit')), findsNothing);
   });
 
   testWidgets('提交结果未知时引导查询记录，且不会自动重发预约', (tester) async {
@@ -476,7 +715,7 @@ void main() {
     await tester.tap(find.text('预约研讨间'));
     await tester.pumpAndSettle();
     final submit = find.byKey(const ValueKey('library-submit'));
-    await tester.scrollUntilVisible(submit, 300);
+    await _scrollTo(tester, submit);
     expect(tester.widget<CupertinoButton>(submit).onPressed, isNull);
     expect(client.submitCalls, 1);
   });
