@@ -25,7 +25,7 @@ jobs:
       APK_NAME: celechron-v1.4.0-universal.apk
       APP_VERSION: 1.4.0
       APP_BUILD_NUMBER: '13'
-      ANDROID_SIGNING_SHA256: 20ebb2a729fb56f041f49b95cabb63d6cfa85e85890c1037f13c1bad2483367c
+      ANDROID_SIGNING_SHA256: a7634b405b936d84326d368842beee9cac78ab17090dfec6d7363f07ae4fd546
 
     steps:
       - name: Check out the exact source commit
@@ -69,29 +69,77 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restore and verify the existing signing identity
+      - name: Restore and verify the fixed release signing identity
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          SIGNING_JSON: ${{ secrets.ANDROID_RELEASE_SIGNING_JSON }}
         run: |
           set -euo pipefail
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo '::error::Configure ANDROID_KEYSTORE_BASE64 with the existing signing keystore. A stable release cannot use a newly generated test certificate.'
-            exit 1
-          fi
-          signing_dir="$RUNNER_TEMP/celechron-stable-signing"
-          umask 077
-          mkdir -p "$signing_dir"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$signing_dir/debug.keystore"
-          chmod 600 "$signing_dir/debug.keystore"
-          certificate_sha256="$(keytool -exportcert -keystore "$signing_dir/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)"
-          if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
-            echo '::error::The signing secret does not match the pinned Celechron signing certificate.'
-            exit 1
-          fi
-          # AGP uses this directory for signingConfigs.debug. The original
-          # keystore is already present; no new signing key is generated.
-          echo "ANDROID_USER_HOME=$signing_dir" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          raw = os.environ.get('SIGNING_JSON', '')
+          if not raw:
+              raise SystemExit('Configure ANDROID_RELEASE_SIGNING_JSON with the fixed release signing identity.')
+          try:
+              signing = json.loads(raw)
+          except (ValueError, TypeError):
+              raise SystemExit('ANDROID_RELEASE_SIGNING_JSON must contain valid JSON.') from None
+          if not isinstance(signing, dict):
+              raise SystemExit('The release signing secret must be a JSON object.')
+          for name in ('store_password', 'key_password'):
+              value = signing.get(name)
+              if isinstance(value, str) and value:
+                  escaped = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::add-mask::{escaped}', flush=True)
+          fields = {'keystore_base64', 'store_password', 'key_password', 'key_alias'}
+          if set(signing) != fields or any(not isinstance(signing[name], str) or not signing[name] for name in fields):
+              raise SystemExit('The signing secret must provide the keystore, both passwords and key alias.')
+          if any(any(character in signing[name] for character in '\r\n\0') for name in fields):
+              raise SystemExit('Release signing values must not contain line breaks or NUL characters.')
+          try:
+              keystore_bytes = base64.b64decode(signing['keystore_base64'], validate=True)
+          except (ValueError, binascii.Error):
+              raise SystemExit('The release signing keystore is not valid base64.') from None
+          if not keystore_bytes:
+              raise SystemExit('The release signing keystore must not be empty.')
+          signing_dir = Path(os.environ['RUNNER_TEMP']) / 'celechron-stable-signing'
+          signing_dir.mkdir(mode=0o700, exist_ok=True)
+          signing_dir.chmod(0o700)
+          keystore = signing_dir / 'release.p12'
+          descriptor = os.open(keystore, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, 'wb') as output:
+              output.write(keystore_bytes)
+          keytool_environment = dict(os.environ)
+          keytool_environment.pop('SIGNING_JSON', None)
+          keytool_environment['CELECHRON_RELEASE_STORE_PASSWORD'] = signing['store_password']
+          try:
+              certificate = subprocess.run(
+                  ['keytool', '-exportcert', '-storetype', 'PKCS12', '-keystore', str(keystore),
+                   '-storepass:env', 'CELECHRON_RELEASE_STORE_PASSWORD', '-alias', signing['key_alias']],
+                  env=keytool_environment, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              ).stdout
+          except (OSError, subprocess.CalledProcessError):
+              raise SystemExit('The release signing keystore could not export its certificate; verify its password and alias.') from None
+          if hashlib.sha256(certificate).hexdigest() != os.environ['ANDROID_SIGNING_SHA256']:
+              raise SystemExit('The signing secret does not match the pinned release signing certificate.')
+          environment = {
+              'CELECHRON_RELEASE_KEYSTORE': str(keystore),
+              'CELECHRON_RELEASE_STORE_PASSWORD': signing['store_password'],
+              'CELECHRON_RELEASE_KEY_PASSWORD': signing['key_password'],
+              'CELECHRON_RELEASE_KEY_ALIAS': signing['key_alias'],
+              'CELECHRON_REQUIRE_RELEASE_SIGNING': 'true',
+          }
+          with Path(os.environ['GITHUB_ENV']).open('a') as output:
+              for name, value in environment.items():
+                  output.write(f'{name}={value}\n')
+          PY
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -123,7 +171,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s "$ANDROID_USER_HOME/debug.keystore"
+          test "$CELECHRON_REQUIRE_RELEASE_SIGNING" = 'true'
+          test -s "$CELECHRON_RELEASE_KEYSTORE"
           flutter build apk --release --no-pub \
             --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
 
@@ -224,7 +273,7 @@ jobs:
 
           APK 由本标签对应的源码在 GitHub Actions 构建，完整自动测试通过，版本、固定签名及 SHA-256 已校验。手机上的实际效果和性能取决于设备及渲染器；不支持实时折射时使用透明模糊回退。
 
-          **安装须知：**支持 Android 9 及以上。单个通用 APK 包含 arm64-v8a、armeabi-v7a、x86_64，无需分卷。正式版恢复原固定签名；此前使用随机测试签名的预发布包不能直接覆盖安装，请先导出需保留的数据再卸载安装，卸载会清除本地数据。
+          **安装须知：**支持 Android 9 及以上。单个通用 APK 包含 arm64-v8a、armeabi-v7a、x86_64，无需分卷。从本版开始使用新的固定正式签名；旧正式版及此前所有预览版均不能直接覆盖安装，请先导出需保留的数据再卸载安装，卸载会清除本地数据。之后使用同一证书发布的新版可正常覆盖升级。
 
           版本：1.4.0+13。SHA256SUMS 可用于校验下载结果，BUILD_INFO.json 记录源码提交、版本和公开证书指纹。
           NOTES

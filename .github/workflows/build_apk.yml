@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ANDROID_SIGNING_SHA256: 20ebb2a729fb56f041f49b95cabb63d6cfa85e85890c1037f13c1bad2483367c
+      ANDROID_SIGNING_SHA256: a7634b405b936d84326d368842beee9cac78ab17090dfec6d7363f07ae4fd546
 
     steps:
       - name: Checkout repository
@@ -21,6 +21,78 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Restore and verify the fixed release signing identity
+        shell: bash
+        env:
+          SIGNING_JSON: ${{ secrets.ANDROID_RELEASE_SIGNING_JSON }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          raw = os.environ.get('SIGNING_JSON', '')
+          if not raw:
+              raise SystemExit('Configure ANDROID_RELEASE_SIGNING_JSON with the fixed release signing identity.')
+          try:
+              signing = json.loads(raw)
+          except (ValueError, TypeError):
+              raise SystemExit('ANDROID_RELEASE_SIGNING_JSON must contain valid JSON.') from None
+          if not isinstance(signing, dict):
+              raise SystemExit('The release signing secret must be a JSON object.')
+          for name in ('store_password', 'key_password'):
+              value = signing.get(name)
+              if isinstance(value, str) and value:
+                  escaped = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::add-mask::{escaped}', flush=True)
+          fields = {'keystore_base64', 'store_password', 'key_password', 'key_alias'}
+          if set(signing) != fields or any(not isinstance(signing[name], str) or not signing[name] for name in fields):
+              raise SystemExit('The signing secret must provide the keystore, both passwords and key alias.')
+          if any(any(character in signing[name] for character in '\r\n\0') for name in fields):
+              raise SystemExit('Release signing values must not contain line breaks or NUL characters.')
+          try:
+              keystore_bytes = base64.b64decode(signing['keystore_base64'], validate=True)
+          except (ValueError, binascii.Error):
+              raise SystemExit('The release signing keystore is not valid base64.') from None
+          if not keystore_bytes:
+              raise SystemExit('The release signing keystore must not be empty.')
+          signing_dir = Path(os.environ['RUNNER_TEMP']) / 'celechron-stable-signing'
+          signing_dir.mkdir(mode=0o700, exist_ok=True)
+          signing_dir.chmod(0o700)
+          keystore = signing_dir / 'release.p12'
+          descriptor = os.open(keystore, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, 'wb') as output:
+              output.write(keystore_bytes)
+          keytool_environment = dict(os.environ)
+          keytool_environment.pop('SIGNING_JSON', None)
+          keytool_environment['CELECHRON_RELEASE_STORE_PASSWORD'] = signing['store_password']
+          try:
+              certificate = subprocess.run(
+                  ['keytool', '-exportcert', '-storetype', 'PKCS12', '-keystore', str(keystore),
+                   '-storepass:env', 'CELECHRON_RELEASE_STORE_PASSWORD', '-alias', signing['key_alias']],
+                  env=keytool_environment, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              ).stdout
+          except (OSError, subprocess.CalledProcessError):
+              raise SystemExit('The release signing keystore could not export its certificate; verify its password and alias.') from None
+          if hashlib.sha256(certificate).hexdigest() != os.environ['ANDROID_SIGNING_SHA256']:
+              raise SystemExit('The signing secret does not match the pinned release signing certificate.')
+          environment = {
+              'CELECHRON_RELEASE_KEYSTORE': str(keystore),
+              'CELECHRON_RELEASE_STORE_PASSWORD': signing['store_password'],
+              'CELECHRON_RELEASE_KEY_PASSWORD': signing['key_password'],
+              'CELECHRON_RELEASE_KEY_ALIAS': signing['key_alias'],
+              'CELECHRON_REQUIRE_RELEASE_SIGNING': 'true',
+          }
+          with Path(os.environ['GITHUB_ENV']).open('a') as output:
+              for name, value in environment.items():
+                  output.write(f'{name}={value}\n')
+          PY
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -29,7 +101,7 @@ jobs:
           cache: true
 
       - name: Get dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Read app version
         run: |
@@ -49,26 +121,6 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Restore signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Set the ANDROID_KEYSTORE_BASE64 repository secret to the base64-encoded existing signing keystore."
-            exit 1
-          fi
-          mkdir -p "$HOME/.android"
-          umask 077
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          # AGP otherwise prefers the runner's XDG_CONFIG_HOME over HOME.
-          echo "ANDROID_USER_HOME=$HOME/.android" >> "$GITHUB_ENV"
-          certificate_sha256=$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)
-          if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
-            echo "::error::The signing secret does not match the existing Celechron signing certificate."
-            exit 1
-          fi
-
       - name: Generate Gradle wrapper
         run: gradle --no-daemon -p android wrapper --gradle-version 8.13
 
@@ -76,12 +128,13 @@ jobs:
         run: dart run flutter_launcher_icons
 
       - name: Build APK
-        run: >
-          flutter build apk
-          --release
-          --split-per-abi
-          --build-name "${{ env.APP_VERSION }}"
-          --build-number "${{ env.APP_BUILD_NUMBER }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CELECHRON_REQUIRE_RELEASE_SIGNING" = 'true'
+          test -s "$CELECHRON_RELEASE_KEYSTORE"
+          flutter build apk --release --split-per-abi --no-pub \
+            --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
 
       - name: Verify APK signing certificates
         shell: bash
@@ -96,7 +149,7 @@ jobs:
             printf '%s\n' "$certificate_info"
             certificate_sha256=$(printf '%s\n' "$certificate_info" | sed -nE 's/^(Signer #[0-9]+|V[0-9.]+ Signer):? certificate SHA-256 digest: ([[:xdigit:]]{64})[[:space:]]*$/\2/p' | tr '[:upper:]' '[:lower:]' | sort -u)
             if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
-              echo "::error::$apk does not match the existing Celechron signing certificate."
+              echo "::error::$apk does not match the fixed release signing certificate."
               exit 1
             fi
           done
@@ -113,3 +166,8 @@ jobs:
         with:
           name: celechron-v${{ env.APP_VERSION }}-apk
           path: build/app/outputs/flutter-apk/celechron-v${{ env.APP_VERSION }}-*.apk
+
+      - name: Remove the temporary signing material
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/celechron-stable-signing"

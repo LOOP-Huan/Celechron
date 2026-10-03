@@ -4,17 +4,21 @@
 
 ## 固定签名
 
-流程沿用项目原有签名身份。仓库的 Actions secret `ANDROID_KEYSTORE_BASE64` 必须包含原签名 keystore 的 Base64 编码；不得把 keystore、编码内容或私钥放入 Git、构建日志、Actions artifact 或 Release 附件。维护者应另行安全备份原始 keystore。
-
-当前 Gradle 配置使用 `signingConfigs.debug`。为保持与已有安装包的兼容性，工作流将原 keystore 恢复到独立的 `ANDROID_USER_HOME/debug.keystore`，使用原有 `androiddebugkey` 别名和 `android` 密码。证书身份由下列 SHA-256 指纹严格锁定，不能用每次构建自动生成的测试证书代替：
+从 1.4.0 开始使用本次新建的固定发布签名：PKCS12、RSA 3072 位，别名 `celechron-release`，证书有效期 10000 天。私钥由维护者长期安全备份，后续版本复用同一密钥；CI 不负责生成签名密钥。公开证书 SHA-256：
 
 ```text
-20ebb2a729fb56f041f49b95cabb63d6cfa85e85890c1037f13c1bad2483367c
+a7634b405b936d84326d368842beee9cac78ab17090dfec6d7363f07ae4fd546
 ```
 
-缺少 secret、解码失败或指纹不符时，工作流在安装 Flutter 和构建 APK 前停止，不能生成或发布替代签名的正式包。构建后再次检查 APK 的实际签名。若确实需要更换签名身份，应先明确安装迁移方案，配置并备份新密钥，同时审查更新工作流的固定指纹和签名配置；仅改标签或版本号不能让不同证书的 APK 覆盖安装。
+在仓库 Settings → Secrets and variables → Actions 新增一个 Secret，名称为 `ANDROID_RELEASE_SIGNING_JSON`，值为私有备份包内 `ANDROID_RELEASE_SIGNING_JSON.json` 的完整内容。JSON 包含 `keystore_base64`、`store_password`、`key_password`、`key_alias` 四个字段；无需另建密码 Secret。它取代旧的 `ANDROID_KEYSTORE_BASE64` 配置，不能将新 JSON 放入旧名称。
 
-GitHub Actions 的 secret 页面只能写入或替换机密，不能取回原值。已有 APK 仅含公钥证书，无法还原签名私钥。缺少原密钥时，不要从公开构件寻找或发布私钥。
+私有备份包含 keystore、密码、该 JSON 和公开证书，请另行保存到维护者控制的安全位置，云工作区不是长期备份。不得把私有备份、keystore、密码或 JSON 放入 Git、日志、Actions artifact、Issue 或 Release 附件。GitHub Secret 只能写入或替换，不能从界面取回原值；APK 也无法还原签名私钥。
+
+正式 CI 将签名文件恢复到受限临时目录，屏蔽密码输出，核验公开证书指纹，然后通过 `CELECHRON_RELEASE_KEYSTORE`、`CELECHRON_RELEASE_STORE_PASSWORD`、`CELECHRON_RELEASE_KEY_PASSWORD`、`CELECHRON_RELEASE_KEY_ALIAS` 传给 Gradle 的 `signingConfigs.release`。`CELECHRON_REQUIRE_RELEASE_SIGNING=true` 防止正式构建退回调试签名。缺失 Secret、解析失败、配置不全或指纹不匹配时必须停止；构建后再次验证 APK 的实际证书。
+
+本地正式构建也使用上述环境变量。未配置发布变量的开发/预览构建保留原调试签名；它们不是正式发布包，不能用来替代固定签名。密码通过环境或受限文件传递，不能出现在命令参数或输出中。
+
+这是一套新的签名身份，不能覆盖旧正式包或此前的预发布包。首次安装前先导出需要保留的数据，再卸载旧版；卸载会清除本地数据。此后相同固定证书、相同包名且版本号更高的正式包可以覆盖升级。不要每次构建重新生成密钥，也不要通过移动标签替换已发布的正式版本。
 
 ## 校验与发布
 
@@ -33,7 +37,5 @@ flutter test --no-pub --enable-impeller --concurrency=1 test/refractive_glass_te
 5. 生成并复核 `SHA256SUMS` 和公开的 `BUILD_INFO.json`，然后创建正式 Release，标为 latest，并验证远端标签指向触发提交。工作流不会覆盖已有标签或 Release。
 
 通用 APK 包含 `arm64-v8a`、`armeabi-v7a` 和 `x86_64`，支持 Android 9 及以上，无需分卷。Release 附件只包含 APK、校验值和不含机密的构建信息。发布说明在工作流的 `Publish the stable release` 步骤中维护，应描述实际实现和验证范围，不应将桌面渲染测试表述为手机实测。
-
-此前预发布包使用每次 CI 新建的测试证书，正式包不能直接覆盖它们。安装前应先导出需保留的数据，再卸载预发布包；卸载会清除本地数据。使用相同固定证书且版本号满足升级要求的正式包可以正常覆盖升级。
 
 恢复签名文件的步骤使用临时目录和仅所有者可读权限；工作流结束时清理该目录。构建产物保留 14 天，Release 附件长期保留。若发布失败，先检查远端是否已经创建标签或 Release，再决定重试；不可强制移动正式标签。

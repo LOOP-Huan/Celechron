@@ -892,4 +892,9 @@ DerivedData/
 # Android signing material stays outside Git and release assets.
 *.jks
 *.keystore
+*.p12
+*.pfx
+ANDROID_RELEASE_SIGNING_JSON.json
+keystore-password.txt
+celechron-fixed-signing-backup-*.zip
 android/key.properties

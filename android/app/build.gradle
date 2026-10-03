@@ -24,6 +24,41 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+def releaseSigningEnvironment = [
+    keystore: 'CELECHRON_RELEASE_KEYSTORE',
+    storePassword: 'CELECHRON_RELEASE_STORE_PASSWORD',
+    keyPassword: 'CELECHRON_RELEASE_KEY_PASSWORD',
+    keyAlias: 'CELECHRON_RELEASE_KEY_ALIAS',
+]
+def releaseSigning = releaseSigningEnvironment.collectEntries { name, variable ->
+    [(name): System.getenv(variable)]
+}
+def requireReleaseSigning = 'true'.equalsIgnoreCase(System.getenv('CELECHRON_REQUIRE_RELEASE_SIGNING'))
+def hasReleaseSigning = releaseSigning.values().any { it != null }
+def releaseKeystoreFile = null
+if (requireReleaseSigning || hasReleaseSigning) {
+    def missingVariables = releaseSigningEnvironment.findAll { name, variable ->
+        releaseSigning[name] == null || releaseSigning[name].isEmpty()
+    }.values()
+    if (!missingVariables.isEmpty()) {
+        throw new GradleException("Release signing requires all configuration variables; missing: ${missingVariables.join(', ')}")
+    }
+    releaseKeystoreFile = file(releaseSigning.keystore)
+    if (!releaseKeystoreFile.isFile() || !releaseKeystoreFile.canRead()) {
+        throw new GradleException('The configured release signing keystore must be a readable file.')
+    }
+    try {
+        def keystore = java.security.KeyStore.getInstance(releaseKeystoreFile, releaseSigning.storePassword.toCharArray())
+        if (!keystore.isKeyEntry(releaseSigning.keyAlias) ||
+            !(keystore.getKey(releaseSigning.keyAlias, releaseSigning.keyPassword.toCharArray()) instanceof java.security.PrivateKey)) {
+            throw new IllegalArgumentException('The release alias must identify a private key.')
+        }
+    } catch (Exception ignored) {
+        // Never include the credential values or keystore exception in logs.
+        throw new GradleException('The release signing keystore or its password/key alias is invalid.')
+    }
+}
+
 android {
     namespace 'xyz.nosig.celechron'
     compileSdkVersion flutter.compileSdkVersion
@@ -52,11 +87,22 @@ android {
         versionName flutterVersionName
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile releaseKeystoreFile
+                storePassword releaseSigning.storePassword
+                keyPassword releaseSigning.keyPassword
+                keyAlias releaseSigning.keyAlias
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig signingConfigs.debug
+            // Stable builds require the fixed release identity. Local and
+            // preview builds without signing configuration keep the fallback.
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
         }
     }
 
