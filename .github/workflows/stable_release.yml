@@ -1,0 +1,264 @@
+name: Publish stable Android release
+
+on:
+  push:
+    branches:
+      - release/liquid-glass-v1.4.0
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: celechron-stable-v1.4.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/release/liquid-glass-v1.4.0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v1.4.0
+      RELEASE_TITLE: Celechron 1.4.0
+      APK_NAME: celechron-v1.4.0-universal.apk
+      APP_VERSION: 1.4.0
+      APP_BUILD_NUMBER: '13'
+      ANDROID_SIGNING_SHA256: 20ebb2a729fb56f041f49b95cabb63d6cfa85e85890c1037f13c1bad2483367c
+
+    steps:
+      - name: Check out the exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate the source version and release destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = re.findall(r'^version:\s*(\S+)\s*$', Path('pubspec.yaml').read_text(), re.MULTILINE)
+          expected = f"{os.environ['APP_VERSION']}+{os.environ['APP_BUILD_NUMBER']}"
+          if version != [expected] or os.environ['RELEASE_TAG'] != f"v{os.environ['APP_VERSION']}":
+              raise SystemExit('The source version, build number and release tag must agree.')
+          PY
+          release_json="$RUNNER_TEMP/stable-release-existing.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -s --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)] | first // null' > "$release_json"
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG^{commit}" > "$RUNNER_TEMP/stable-release-tag-commit"; then
+            if [ "$(cat "$RUNNER_TEMP/stable-release-tag-commit")" != "$GITHUB_SHA" ]; then
+              echo '::error::The release tag points to another commit; refusing to move it.'
+              exit 1
+            fi
+          fi
+          if [ "$(jq -r 'type' "$release_json")" != 'null' ]; then
+            echo '::error::This release already exists; no metadata or assets were changed.'
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore and verify the existing signing identity
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo '::error::Configure ANDROID_KEYSTORE_BASE64 with the existing signing keystore. A stable release cannot use a newly generated test certificate.'
+            exit 1
+          fi
+          signing_dir="$RUNNER_TEMP/celechron-stable-signing"
+          umask 077
+          mkdir -p "$signing_dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$signing_dir/debug.keystore"
+          chmod 600 "$signing_dir/debug.keystore"
+          certificate_sha256="$(keytool -exportcert -keystore "$signing_dir/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f 1)"
+          if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
+            echo '::error::The signing secret does not match the pinned Celechron signing certificate.'
+            exit 1
+          fi
+          # AGP uses this directory for signingConfigs.debug. The original
+          # keystore is already present; no new signing key is generated.
+          echo "ANDROID_USER_HOME=$signing_dir" >> "$GITHUB_ENV"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.1'
+          channel: stable
+          cache: true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Install the locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Run the test suite
+        run: flutter test --no-pub
+
+      - name: Generate the Gradle wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -p android wrapper --gradle-version 8.13 \
+            --distribution-type all \
+            --gradle-distribution-url https://services.gradle.org/distributions/gradle-8.13-all.zip
+
+      - name: Build the universal release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$ANDROID_USER_HOME/debug.keystore"
+          flutter build apk --release --no-pub \
+            --build-name "$APP_VERSION" --build-number "$APP_BUILD_NUMBER"
+
+      - name: Verify and package the APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/celechron-stable-assets"
+          mkdir -p "$release_dir"
+          cp build/app/outputs/flutter-apk/app-release.apk "$release_dir/$APK_NAME"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n 1)"
+          aapt="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n 1)"
+          if [ -z "$apksigner" ] || [ -z "$aapt" ]; then
+            echo '::error::Android SDK verification tools were not found.'
+            exit 1
+          fi
+          certificate_info="$("$apksigner" verify --verbose --print-certs "$release_dir/$APK_NAME")"
+          printf '%s\n' "$certificate_info"
+          certificate_sha256="$(printf '%s\n' "$certificate_info" | sed -nE 's/^(Signer #[0-9]+|V[0-9.]+ Signer):? certificate SHA-256 digest: ([[:xdigit:]]{64})[[:space:]]*$/\2/p' | tr '[:upper:]' '[:lower:]' | sort -u)"
+          if [ "$certificate_sha256" != "$ANDROID_SIGNING_SHA256" ]; then
+            echo '::error::The APK does not match the pinned signing certificate.'
+            exit 1
+          fi
+          "$aapt" dump badging "$release_dir/$APK_NAME" > "$RUNNER_TEMP/celechron-stable-badging.txt"
+          RELEASE_DIR="$release_dir" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import zipfile
+          from pathlib import Path
+
+          badging = (Path(os.environ['RUNNER_TEMP']) / 'celechron-stable-badging.txt').read_text()
+          package = next(line for line in badging.splitlines() if line.startswith('package:'))
+          values = dict(re.findall(r"(\w+)='([^']*)'", package))
+          expected = {
+              'name': 'xyz.nosig.celechron',
+              'versionCode': os.environ['APP_BUILD_NUMBER'],
+              'versionName': os.environ['APP_VERSION'],
+          }
+          if any(values.get(key) != value for key, value in expected.items()):
+              raise SystemExit(f'Unexpected APK package/version: {values}')
+          if "sdkVersion:'28'" not in badging.splitlines():
+              raise SystemExit('The APK must support Android 9 and later.')
+          native = next(line for line in badging.splitlines() if line.startswith('native-code:'))
+          if set(re.findall(r"'([^']*)'", native)) != {'arm64-v8a', 'armeabi-v7a', 'x86_64'}:
+              raise SystemExit(f'Unexpected universal APK ABIs: {native}')
+          if 'application-debuggable' in badging.splitlines():
+              raise SystemExit('A stable APK must not be debuggable.')
+          release_dir = Path(os.environ['RELEASE_DIR'])
+          apk = release_dir / os.environ['APK_NAME']
+          with zipfile.ZipFile(apk) as archive:
+              shader = archive.read('assets/flutter_assets/shaders/liquid_glass.frag')
+              if len(shader) < 100 or shader.lstrip().startswith(b'#include'):
+                  raise SystemExit('The APK is missing the compiled liquid glass shader.')
+          info = {
+              'source_commit': os.environ['GITHUB_SHA'],
+              'release_tag': os.environ['RELEASE_TAG'],
+              'package': expected['name'],
+              'version': expected['versionName'],
+              'build_number': int(expected['versionCode']),
+              'apk': apk.name,
+              'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+              'signing_certificate_sha256': os.environ['ANDROID_SIGNING_SHA256'],
+          }
+          (release_dir / 'BUILD_INFO.json').write_text(json.dumps(info, indent=2) + '\n')
+          PY
+          cd "$release_dir"
+          sha256sum "$APK_NAME" BUILD_INFO.json > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          echo "release_dir=$release_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Retain the verified build as a workflow artifact
+        if: steps.apk.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: celechron-v1.4.0-apk
+          path: |
+            ${{ steps.apk.outputs.release_dir }}/${{ env.APK_NAME }}
+            ${{ steps.apk.outputs.release_dir }}/SHA256SUMS
+            ${{ steps.apk.outputs.release_dir }}/BUILD_INFO.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish the stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/celechron-stable-assets"
+          notes_file="$RUNNER_TEMP/celechron-stable-release-notes.md"
+          cat > "$notes_file" <<'NOTES'
+          Celechron 1.4.0 正式版：优化液态玻璃渲染，保留实时折射、轻微连续模糊及清晰的前景文字。
+
+          玻璃平坦内区跳过不影响输出的边缘梯度与折射曲面计算；位置、尺寸及光学参数不变时复用滤镜对象。背景内容仍实时刷新，保留原有边缘光学效果、双线性采样和连续高斯滤波。优化前后的原生渲染对照用于检查画面一致性，不以桌面测试推断手机帧率或功耗。
+
+          包含应用背景图片自定义和图书馆座位/研讨间预约，保留预约可用优先排序、楼层数量统计及取消/结束功能。定时预约仍未启用；本次不改变登录凭据、预约请求或 Android 权限。
+
+          APK 由本标签对应的源码在 GitHub Actions 构建，完整自动测试通过，版本、固定签名及 SHA-256 已校验。手机上的实际效果和性能取决于设备及渲染器；不支持实时折射时使用透明模糊回退。
+
+          **安装须知：**支持 Android 9 及以上。单个通用 APK 包含 arm64-v8a、armeabi-v7a、x86_64，无需分卷。正式版恢复原固定签名；此前使用随机测试签名的预发布包不能直接覆盖安装，请先导出需保留的数据再卸载安装，卸载会清除本地数据。
+
+          版本：1.4.0+13。SHA256SUMS 可用于校验下载结果，BUILD_INFO.json 记录源码提交、版本和公开证书指纹。
+          NOTES
+          printf '\n源码提交：`%s`\n\n<!-- celechron-stable-source:%s -->\n' "$GITHUB_SHA" "$GITHUB_SHA" >> "$notes_file"
+          # Recheck the remote tag immediately before publishing so a tag
+          # created while the APK was building cannot silently change source.
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")" ]; then
+            git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+            if [ "$(git rev-parse 'FETCH_HEAD^{commit}')" != "$GITHUB_SHA" ]; then
+              echo '::error::The remote release tag no longer matches this build.'
+              exit 1
+            fi
+          fi
+          gh release create "$RELEASE_TAG" \
+            "$release_dir/$APK_NAME" "$release_dir/SHA256SUMS" "$release_dir/BUILD_INFO.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file "$notes_file" \
+            --latest
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/celechron-stable-published.json"
+          jq -e --arg tag "$RELEASE_TAG" --arg sha "$GITHUB_SHA" \
+            '.tag_name == $tag and .target_commitish == $sha and .draft == false and .prerelease == false' \
+            "$RUNNER_TEMP/celechron-stable-published.json"
+          git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.id')" = "$(jq -r '.id' "$RUNNER_TEMP/celechron-stable-published.json")"
+          release_url="$(jq -r '.html_url' "$RUNNER_TEMP/celechron-stable-published.json")"
+          printf 'Published stable release: [%s](%s)\n' "$RELEASE_TITLE" "$release_url" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```text\n' >> "$GITHUB_STEP_SUMMARY"
+          cat "$release_dir/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the temporary signing material
+        if: always()
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/celechron-stable-signing"

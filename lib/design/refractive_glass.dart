@@ -23,9 +23,9 @@ class RefractiveGlass extends StatefulWidget {
     this.enabled = true,
     this.refraction = 1.15,
     this.blurSigma = 0.9,
-  })  : assert(borderRadius >= 0),
-        assert(refraction >= 0),
-        assert(blurSigma >= 0);
+  }) : assert(borderRadius >= 0),
+       assert(refraction >= 0),
+       assert(blurSigma >= 0);
 
   final Widget child;
   final double borderRadius;
@@ -54,11 +54,13 @@ class _GlassProgram {
 
   static Future<ui.FragmentProgram?> _load() async {
     try {
-      return loaded =
-          await ui.FragmentProgram.fromAsset('shaders/liquid_glass.frag');
+      return loaded = await ui.FragmentProgram.fromAsset(
+        'shaders/liquid_glass.frag',
+      );
     } on Object catch (error) {
       debugPrint(
-          'RefractiveGlass: shader unavailable; using light blur ($error)');
+        'RefractiveGlass: shader unavailable; using light blur ($error)',
+      );
       return null;
     }
   }
@@ -102,10 +104,12 @@ class _RefractiveGlassState extends State<RefractiveGlass> {
       _program = cached;
       return;
     }
-    unawaited(_GlassProgram.load().then((program) {
-      if (!mounted || program == null) return;
-      setState(() => _program = program);
-    }));
+    unawaited(
+      _GlassProgram.load().then((program) {
+        if (!mounted || program == null) return;
+        setState(() => _program = program);
+      }),
+    );
   }
 
   @override
@@ -151,25 +155,52 @@ class _GlassBackdrop extends SingleChildRenderObjectWidget {
 
   @override
   void updateRenderObject(
-      BuildContext context, _RenderGlassBackdrop renderObject) {
+    BuildContext context,
+    _RenderGlassBackdrop renderObject,
+  ) {
     renderObject.update(program, borderRadius, refraction, blurSigma);
   }
 }
 
 class _RenderGlassBackdrop extends RenderProxyBox {
   _RenderGlassBackdrop(
-      this._program, this.radius, this.refraction, this.blurSigma) {
+    this._program,
+    this.radius,
+    this.refraction,
+    this.blurSigma,
+  ) {
     _shader = _program?.fragmentShader();
   }
 
   ui.FragmentProgram? _program;
   ui.FragmentShader? _shader;
+  ui.ImageFilter? _refractionFilter;
+  ui.ImageFilter? _smoothingFilter;
+  Matrix4? _filterTransform;
+  Size? _filterViewSize;
+  Size? _filterCardSize;
   double radius;
   double refraction;
   double blurSigma;
 
-  void update(ui.FragmentProgram? program, double newRadius,
-      double newRefraction, double newBlurSigma) {
+  void update(
+    ui.FragmentProgram? program,
+    double newRadius,
+    double newRefraction,
+    double newBlurSigma,
+  ) {
+    if (program == _program &&
+        radius == newRadius &&
+        refraction == newRefraction &&
+        blurSigma == newBlurSigma) {
+      return;
+    }
+    if (program != _program ||
+        radius != newRadius ||
+        refraction != newRefraction) {
+      _refractionFilter = null;
+    }
+    if (blurSigma != newBlurSigma) _smoothingFilter = null;
     if (program != _program) {
       _shader?.dispose();
       _program = program;
@@ -196,8 +227,12 @@ class _RenderGlassBackdrop extends RenderProxyBox {
     }, offset);
   }
 
-  ui.ImageFilter get smoothingFilter => ui.ImageFilter.blur(
-      sigmaX: blurSigma, sigmaY: blurSigma, tileMode: ui.TileMode.clamp);
+  ui.ImageFilter get smoothingFilter =>
+      _smoothingFilter ??= ui.ImageFilter.blur(
+        sigmaX: blurSigma,
+        sigmaY: blurSigma,
+        tileMode: ui.TileMode.clamp,
+      );
 
   ui.ImageFilter? refractionFilterForScene(bool offscreenInput) {
     final shader = _shader;
@@ -208,6 +243,16 @@ class _RenderGlassBackdrop extends RenderProxyBox {
     final viewSize = root.size;
     if (viewSize.isEmpty) return null;
     final transform = getTransformTo(null);
+    // Cache only the immutable filter parameters, never backdrop pixels. The
+    // engine still samples the current frame, including content scrolling
+    // behind a stationary dock. Retained layers must check their transform on
+    // every composition because scrolling need not invoke paint or build.
+    if (_refractionFilter != null &&
+        _filterTransform == transform &&
+        _filterViewSize == viewSize &&
+        _filterCardSize == size) {
+      return _refractionFilter;
+    }
     final m = transform.storage;
     // Ordinary translation, scale, rotation and skew are supported. Perspective
     // and singular transforms cannot be mapped to the input's 2D pixel plane.
@@ -247,13 +292,20 @@ class _RenderGlassBackdrop extends RenderProxyBox {
     for (var index = 0; index < values.length; index++) {
       shader.setFloat(index + 2, values[index]);
     }
-    // A new filter snapshots these uniforms for the raster thread. Reusing an
-    // ImageFilter instance would retain its earlier native uniform snapshot.
-    return ui.ImageFilter.shader(shader);
+    // Create a new native uniform snapshot only when its inputs have changed.
+    // Reusing the old filter after a geometry change would pin the refraction
+    // to its earlier position, even though its backdrop remains live.
+    _filterTransform = transform;
+    _filterViewSize = viewSize;
+    _filterCardSize = size;
+    return _refractionFilter = ui.ImageFilter.shader(shader);
   }
 
   @override
   void dispose() {
+    _refractionFilter = null;
+    _smoothingFilter = null;
+    _filterTransform = null;
     _shader?.dispose();
     _shader = null;
     super.dispose();
@@ -273,9 +325,11 @@ class _GlassBackdropLayer extends ContainerLayer {
   bool get alwaysNeedsAddToScene => true;
 
   bool get _hasOffscreenInput {
-    for (Layer? ancestor = parent;
-        ancestor != null;
-        ancestor = ancestor.parent) {
+    for (
+      Layer? ancestor = parent;
+      ancestor != null;
+      ancestor = ancestor.parent
+    ) {
       if ((ancestor is OpacityLayer && ancestor.alpha != 255) ||
           ancestor is ImageFilterLayer ||
           ancestor is ColorFilterLayer ||

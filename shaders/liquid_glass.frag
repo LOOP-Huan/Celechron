@@ -67,6 +67,20 @@ void main() {
 
   // This is the same rounded thickness profile as the approved WebGL sample.
   float depth = max(-distance, 0.0);
+  if (depth >= 23.0) {
+    // Beyond the maximum bevel, t and arc are 1, the normal is (0, 0, 1),
+    // and bend is zero. Rim and lip also underflow to zero at this depth.
+    // Keep the same zoom and premultiplied highlight without evaluating the
+    // four SDF derivatives, curved refraction, or edge lighting per pixel.
+    vec2 optical = (q / 1.018 - q) * u_refraction;
+    vec4 glass = sampleBackdrop(viewPoint + viewDelta(optical));
+    const vec3 light = normalize(vec3(-0.55, -0.83, 0.65));
+    const float reflection = pow(normalize(light + vec3(0.0, 0.0, 1.0)).z, 14.0);
+    const float highlight = reflection * 0.10 + 0.025 * 0.13;
+    glass.rgb = mix(glass.rgb, vec3(glass.a), highlight);
+    fragColor = glass;
+    return;
+  }
   float bevel = min(23.0, max(1.0, min(halfSize.x, halfSize.y)));
   float t = clamp(depth / bevel, 0.0, 1.0);
   float arc = sqrt(max(0.0, 1.0 - (1.0 - t) * (1.0 - t)));
