@@ -579,11 +579,14 @@ class FlowPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPageScaffold(
       child: SafeArea(
+        // Let the navigation bar extend its blur through the status bar.
+        top: false,
         child: CustomScrollView(
           // Allow the list to shrink wrap around the top and bottom bars.
           slivers: [
             CupertinoSliverNavigationBar(
               backgroundColor: GlassPalette.barColor,
+              brightness: CupertinoTheme.brightnessOf(context),
               largeTitle: const Text('接下来'),
               stretch: true,
               border: null,

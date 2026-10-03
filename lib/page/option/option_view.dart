@@ -61,11 +61,14 @@ class OptionPage extends StatelessWidget {
     return GlassPageScaffold(
       backgroundColor: GlassPalette.background,
       child: SafeArea(
+        // Let the navigation bar extend its blur through the status bar.
+        top: false,
         child: CustomScrollView(
           slivers: [
-            const CupertinoSliverNavigationBar(
-              largeTitle: Text('设置'),
+            CupertinoSliverNavigationBar(
+              largeTitle: const Text('设置'),
               backgroundColor: GlassPalette.barColor,
+              brightness: CupertinoTheme.brightnessOf(context),
               border: null,
             ),
             // 教务

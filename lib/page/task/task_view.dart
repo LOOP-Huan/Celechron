@@ -542,10 +542,13 @@ class TaskPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassPageScaffold(
       child: SafeArea(
+        // Let the navigation bar extend its blur through the status bar.
+        top: false,
         child: CustomScrollView(
           slivers: [
             CupertinoSliverNavigationBar(
               backgroundColor: GlassPalette.barColor,
+              brightness: CupertinoTheme.brightnessOf(context),
               largeTitle: const Text('任务'),
               border: null,
               stretch: true,
