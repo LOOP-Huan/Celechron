@@ -2,12 +2,12 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:celechron/design/persistent_headers.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import '../../http/zjuServices/ecard.dart';
 import '../../utils/utils.dart';
 
@@ -58,104 +58,143 @@ class ECardPayPage extends StatelessWidget {
         _barcode.value = code;
       }
     });
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
             const CelechronSliverTextHeader(subtitle: '付款码'),
             SliverFillRemaining(
-                child: Column(
-              children: [
-                const Spacer(
-                  flex: 4,
-                ),
-                Obx(() {
-                  if (_loading.value) {
-                    return const CupertinoActivityIndicator();
-                  } else {
-                    return GestureDetector(
-                        onTap: () => _requestNewCode()
-                            .then((value) => _barcode.value = value ?? ''),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // White background
-                            Container(
-                              width: 200,
-                              height: 200,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            _barcode.value.isNotEmpty &&
-                                    _barcode.value.length < 30
-                                ? QrImageView(
-                                    data: _barcode.value, version: 3, size: 200)
-                                : Text(_barcode.value,
-                                    style: const TextStyle(
-                                        color: CupertinoColors.black)),
-                          ],
-                        ));
-                  }
-                }),
-                const SizedBox(
-                  height: 20,
-                ),
-                Obx(() {
-                  if (_loading.value) {
-                    return const Text('加载中...');
-                  }
-                  return Text(
-                      '付款码：${_barcode.value.isNotEmpty ? _barcode.value : '加载失败'}');
-                }),
-                const SizedBox(
-                  height: 30,
-                ),
-                Obx(() {
-                  if (_loading.value) {
-                    return const SizedBox.shrink();
-                  }
-                  return CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    color: CupertinoColors.activeBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    onPressed: () {
-                      _loading.value = true;
-                      _requestNewCode().then((value) {
-                        _loading.value = false;
-                        _barcode.value = value ?? '';
-                      });
-                    },
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
+                hasScrollBody: false,
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+                    child: Column(
                       children: [
-                        Icon(
-                          CupertinoIcons.refresh,
-                          size: 18,
-                          color: CupertinoColors.white,
+                        const Spacer(
+                          flex: 4,
                         ),
-                        SizedBox(width: 8),
-                        Text(
-                          '刷新二维码',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: CupertinoColors.white,
+                        GlassSurface(
+                          emphasized: true,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 28),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Obx(() {
+                                if (_loading.value) {
+                                  return const CupertinoActivityIndicator();
+                                } else {
+                                  return GestureDetector(
+                                      onTap: () => _requestNewCode().then(
+                                          (value) =>
+                                              _barcode.value = value ?? ''),
+                                      child: Center(
+                                        child: Container(
+                                          width: 224,
+                                          height: 224,
+                                          padding: const EdgeInsets.all(12),
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: CupertinoColors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(18),
+                                          ),
+                                          child: _barcode.value.isNotEmpty &&
+                                                  _barcode.value.length < 30
+                                              ? QrImageView(
+                                                  data: _barcode.value,
+                                                  version: 3,
+                                                  size: 200,
+                                                  backgroundColor:
+                                                      CupertinoColors.white)
+                                              : Text(_barcode.value,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                      color: CupertinoColors
+                                                          .black)),
+                                        ),
+                                      ));
+                                }
+                              }),
+                              const SizedBox(
+                                height: 20,
+                              ),
+                              Obx(() {
+                                if (_loading.value) {
+                                  return const Text('加载中...',
+                                      textAlign: TextAlign.center);
+                                }
+                                return Text(
+                                  '付款码：${_barcode.value.isNotEmpty ? _barcode.value : '加载失败'}',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: CupertinoDynamicColor.resolve(
+                                        CupertinoColors.secondaryLabel,
+                                        context),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(
+                                height: 30,
+                              ),
+                              Obx(() {
+                                if (_loading.value) {
+                                  return const SizedBox.shrink();
+                                }
+                                return GlassSurface(
+                                  borderRadius: 18,
+                                  tint: CupertinoDynamicColor.resolve(
+                                          GlassPalette.accent, context)
+                                      .withValues(alpha: 0.12),
+                                  child: CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                    borderRadius: BorderRadius.circular(18),
+                                    onPressed: () {
+                                      _loading.value = true;
+                                      _requestNewCode().then((value) {
+                                        _loading.value = false;
+                                        _barcode.value = value ?? '';
+                                      });
+                                    },
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.refresh,
+                                          size: 18,
+                                          color: CupertinoDynamicColor.resolve(
+                                              GlassPalette.accent, context),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '刷新二维码',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            color:
+                                                CupertinoDynamicColor.resolve(
+                                                    GlassPalette.accent,
+                                                    context),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
                           ),
                         ),
+                        const Spacer(
+                          flex: 6,
+                        ),
                       ],
-                    ),
-                  );
-                }),
-                const Spacer(
-                  flex: 6,
-                ),
-              ],
-            ))
+                    )))
           ],
         ),
       ),

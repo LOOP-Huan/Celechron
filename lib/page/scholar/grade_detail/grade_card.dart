@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'dart:math';
 
 import 'package:celechron/page/scholar/grade_detail/grade_detail_controller.dart';
@@ -56,8 +57,6 @@ class _GradeCardState extends State<GradeCard>
 
   @override
   Widget build(BuildContext context) {
-    var brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
     var isDown = false;
     var isCancel = false;
 
@@ -101,26 +100,13 @@ class _GradeCardState extends State<GradeCard>
       child: Obx(
         () => ScaleTransition(
           scale: _scaleAnimation,
-          child: Container(
+          child: GlassSurface(
             padding:
                 const EdgeInsets.only(left: 12, right: 12, bottom: 8, top: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: brightness == Brightness.dark
-                  ? CupertinoColors.systemFill
-                  : CupertinoDynamicColor.resolve(
-                      widget.backgroundColor, context),
-              // boxShadow
-              boxShadow: [
-                BoxShadow(
-                  // Only show shadow in light mode
-                  color: CupertinoColors.black.withValues(alpha: 0.1),
-                  spreadRadius: 0,
-                  blurRadius: 12,
-                  offset: const Offset(0, 6), // changes position of shadow
-                ),
-              ],
-            ),
+            borderRadius: 20,
+            tint: widget.backgroundColor,
+            emphasized:
+                _gradeDetailController.customGpaMode.value && isHighlighted(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

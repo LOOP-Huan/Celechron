@@ -1,4 +1,5 @@
 import 'package:celechron/design/custom_decoration.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/sub_title.dart';
 import 'package:celechron/model/task.dart';
 import 'package:celechron/page/task/task_controller.dart';
@@ -26,7 +27,7 @@ class CalendarPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,9 +105,10 @@ class CalendarPage extends StatelessWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(
-                            bottom: 5, left: 12, right: 12),
+                      GlassSurface(
+                        margin: const EdgeInsets.fromLTRB(16, 4, 16, 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 10),
                         child: TableCalendar(
                           locale: 'zh_CN',
                           firstDay: DateTime.utc(2022, 9, 1),
@@ -115,6 +117,14 @@ class CalendarPage extends StatelessWidget {
                           daysOfWeekHeight: 20.0,
                           startingDayOfWeek: StartingDayOfWeek.monday,
                           daysOfWeekStyle: DaysOfWeekStyle(
+                            weekdayStyle: TextStyle(
+                              color: CupertinoDynamicColor.resolve(
+                                  CupertinoColors.secondaryLabel, context),
+                            ),
+                            weekendStyle: TextStyle(
+                              color: CupertinoDynamicColor.resolve(
+                                  CupertinoColors.secondaryLabel, context),
+                            ),
                             dowTextFormatter: (date, locale) => <String>[
                               '',
                               '一',
@@ -156,26 +166,37 @@ class CalendarPage extends StatelessWidget {
                           calendarStyle: CalendarStyle(
                             markersAnchor: -0.1,
                             markersMaxCount: 10,
-                            selectedDecoration: BoxDecoration(
-                              color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.activeBlue
-                                      .withValues(alpha: 0.5),
-                                  context),
-                              shape: BoxShape.circle,
+                            selectedDecoration: GlassPalette.decoration(
+                              context,
+                              radius: 18,
+                              tint: CupertinoColors.activeBlue,
+                              selected: true,
                             ),
                             selectedTextStyle:
                                 CupertinoTheme.of(context).textTheme.textStyle,
-                            todayDecoration: BoxDecoration(
-                              color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.inactiveGray
-                                      .withValues(alpha: 0.5),
-                                  context),
-                              shape: BoxShape.circle,
+                            todayDecoration: GlassPalette.decoration(
+                              context,
+                              radius: 18,
+                              tint: CupertinoColors.inactiveGray,
                             ),
                             todayTextStyle:
                                 CupertinoTheme.of(context).textTheme.textStyle,
                             defaultTextStyle:
                                 CupertinoTheme.of(context).textTheme.textStyle,
+                            weekendTextStyle: CupertinoTheme.of(context)
+                                .textTheme
+                                .textStyle
+                                .copyWith(
+                                  color: CupertinoDynamicColor.resolve(
+                                      CupertinoColors.secondaryLabel, context),
+                                ),
+                            outsideTextStyle: CupertinoTheme.of(context)
+                                .textTheme
+                                .textStyle
+                                .copyWith(
+                                  color: CupertinoDynamicColor.resolve(
+                                      CupertinoColors.tertiaryLabel, context),
+                                ),
                           ),
                           calendarBuilders: const CalendarBuilders(
                             singleMarkerBuilder: singleMarkerBuilder,
@@ -197,21 +218,20 @@ class CalendarPage extends StatelessWidget {
                                 ? Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                        border: Border.all(
-                                            color: CustomCupertinoDynamicColors
-                                                .okGreen.darkColor,
-                                            width: 1),
-                                        borderRadius:
-                                            BorderRadius.circular(10)),
+                                    decoration: GlassPalette.decoration(
+                                      context,
+                                      radius: 12,
+                                      tint:
+                                          CustomCupertinoDynamicColors.okGreen,
+                                    ),
                                     child: Text(
                                       _calendarController
                                               .scholar.value.specialDates[
                                           _calendarController.selectedDay.value
                                               .copyWith(isUtc: false)]!,
                                       style: TextStyle(
-                                          color: CustomCupertinoDynamicColors
-                                              .okGreen.darkColor,
+                                          color: CupertinoDynamicColor.resolve(
+                                              CupertinoColors.label, context),
                                           fontSize: 12),
                                     ),
                                   )

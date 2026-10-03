@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import 'liquid_glass.dart';
+
 class TwoLineCard extends StatefulWidget {
   final String title;
   final String content;
@@ -35,217 +37,155 @@ class TwoLineCard extends StatefulWidget {
   State<TwoLineCard> createState() => _TwoLineCardState();
 }
 
-class _TwoLineCardState extends State<TwoLineCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
+class _TwoLineCardState extends State<TwoLineCard> {
+  bool _pressed = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.animate) {
-      _animationController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 200),
-        reverseDuration: const Duration(milliseconds: 400),
-      );
-      _scaleAnimation = Tween<double>(begin: 1, end: 0.95).animate(
-        CurvedAnimation(
-          parent: _animationController,
-          curve: Curves.easeInOut,
-        ),
-      );
-    }
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) _pressed = false;
   }
 
   @override
-  void dispose() {
-    if (widget.animate) {
-      _animationController.dispose();
-    }
-    super.dispose();
+  void didUpdateWidget(covariant TwoLineCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.animate || widget.transparent) _pressed = false;
+  }
+
+  void _setPressed(bool pressed) {
+    if (_pressed != pressed) setState(() => _pressed = pressed);
   }
 
   @override
   Widget build(BuildContext context) {
-    var isDown = false;
-    var isCancel = false;
-    var brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final tint = CupertinoDynamicColor.resolve(widget.backgroundColor, context);
+    final textStyle = CupertinoTheme.of(context).textTheme.textStyle;
+    final valueColor = widget.withColoredFont && GlassPalette.isDark(context)
+        ? tint
+        : CupertinoDynamicColor.resolve(CupertinoColors.label, context);
+
+    final body = LayoutBuilder(
+      builder: (context, constraints) => FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: constraints.hasBoundedWidth ? constraints.maxWidth : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  widget.title,
+                  maxLines: 1,
+                  style: textStyle.copyWith(
+                    color: CupertinoDynamicColor.resolve(
+                      CupertinoColors.secondaryLabel,
+                      context,
+                    ),
+                    fontSize: 14,
+                    fontWeight: FontWeight.normal,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              widget.withColoredFont
+                  ? const SizedBox(height: 4)
+                  : Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: tint,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      widget.content,
+                      maxLines: 1,
+                      style: textStyle.copyWith(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: valueColor,
+                      ),
+                    ),
+                    if (widget.extraContent != null)
+                      Text(
+                        ' / ${widget.extraContent}',
+                        maxLines: 1,
+                        style: textStyle.copyWith(
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          color: valueColor,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 
     if (widget.transparent) {
-      return Container(
+      return SizedBox(
         height: widget.height,
         width: widget.width,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          // add a colored edge
-          children: [
-            Text(widget.title,
-                style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                      color: const Color.fromRGBO(0, 0, 0, 0),
-                      fontSize: 14,
-                      fontWeight: FontWeight.normal,
-                    )),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  widget.content,
-                  style:
-                      CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            fontFeatures: [const FontFeature.tabularFigures()],
-                            color: const Color.fromRGBO(0, 0, 0, 0),
-                          ),
-                ),
-                if (widget.extraContent != null)
-                  Text(
-                    ' / ${widget.extraContent}',
-                    style: CupertinoTheme.of(context)
-                        .textTheme
-                        .textStyle
-                        .copyWith(
-                          fontSize: 12,
-                          fontFeatures: [const FontFeature.tabularFigures()],
-                          color: const Color.fromRGBO(0, 0, 0, 0),
-                        ),
-                  ),
-              ],
+        child: IgnorePointer(
+          child: ExcludeSemantics(
+            child: Opacity(
+              opacity: 0,
+              child: Padding(padding: const EdgeInsets.all(16), child: body),
             ),
-          ],
+          ),
         ),
       );
     }
 
-    var core = Container(
+    final core = SizedBox(
       height: widget.height,
       width: widget.width,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: brightness == Brightness.dark
-            ? CupertinoColors.secondarySystemFill
-            : CupertinoDynamicColor.resolve(widget.backgroundColor, context),
-        // boxShadow
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(0, 0, 0, 0.05),
-            offset: Offset(0, 2),
-            blurRadius: 4,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        // add a colored edge
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              widget.title,
-              style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                    color: CupertinoTheme.of(context)
-                        .textTheme
-                        .textStyle
-                        .color!
-                        .withValues(alpha: 0.5),
-                    fontSize: 14,
-                    fontWeight: FontWeight.normal,
-                  ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          widget.withColoredFont
-              ? const SizedBox(height: 4)
-              : SizedBox(
-                  height: 4,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: CupertinoDynamicColor.resolve(
-                          widget.backgroundColor, context),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  widget.content,
-                  style:
-                      CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: (widget.withColoredFont &&
-                                    brightness == Brightness.dark)
-                                ? CupertinoDynamicColor.resolve(
-                                    widget.backgroundColor, context)
-                                : CupertinoTheme.of(context)
-                                    .textTheme
-                                    .textStyle
-                                    .color,
-                          ),
-                ),
-                if (widget.extraContent != null)
-                  Text(
-                    ' / ${widget.extraContent}',
-                    style:
-                        CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                              fontSize: 12,
-                              color: (widget.withColoredFont &&
-                                      brightness == Brightness.dark)
-                                  ? CupertinoDynamicColor.resolve(
-                                      widget.backgroundColor, context)
-                                  : CupertinoTheme.of(context)
-                                      .textTheme
-                                      .textStyle
-                                      .color,
-                            ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+      child: GlassSurface(
+        borderRadius: 20,
+        padding: const EdgeInsets.all(16),
+        tint: widget.backgroundColor == CupertinoColors.systemBackground
+            ? null
+            : tint,
+        child: body,
       ),
     );
 
-    return widget.animate
-        ? GestureDetector(
-            onTapDown: (_) async {
-              isDown = true;
-              isCancel = false;
-              _animationController.forward();
-              await Future.delayed(const Duration(milliseconds: 125));
-              isDown = false;
-              if (isCancel) {
-                _animationController.reverse();
-                isCancel = false;
-              }
-            },
-            onTapUp: (_) async {
-              isCancel = true;
-              if (!isDown) _animationController.reverse();
-            },
-            onTapCancel: () => _animationController.reverse(),
-            onTap: widget.onTap,
-            onLongPress: widget.onLongPress,
-            child: ScaleTransition(scale: _scaleAnimation, child: core),
-          )
-        : (widget.onTap == null && widget.onLongPress == null)
-            ? core
-            : GestureDetector(
-                onTap: widget.onTap != null ? () => widget.onTap!.call() : null,
-                onLongPress: widget.onLongPress,
-                child: core,
-              );
+    if (!widget.animate && widget.onTap == null && widget.onLongPress == null) {
+      return core;
+    }
+
+    final animate = widget.animate && !disableAnimations;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: animate ? (_) => _setPressed(true) : null,
+      onTapUp: animate ? (_) => _setPressed(false) : null,
+      onTapCancel: animate ? () => _setPressed(false) : null,
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      child: AnimatedScale(
+        scale: animate && _pressed ? 0.97 : 1,
+        duration: animate
+            ? Duration(milliseconds: _pressed ? 140 : 240)
+            : Duration.zero,
+        curve: Curves.easeOutCubic,
+        child: core,
+      ),
+    );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/utils/platform_features.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -16,14 +17,10 @@ class LoginForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
-
-    return Container(
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: CupertinoDynamicColor.resolve(
-                CupertinoColors.systemGroupedBackground, context)),
+    return GlassSurface(
+        blur: true,
+        modal: true,
+        borderRadius: 28,
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
           left: 6,
@@ -59,11 +56,10 @@ class LoginForm extends StatelessWidget {
                                       .textTheme
                                       .textStyle)),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: brightness == Brightness.light
-                                ? CupertinoColors.systemBackground
-                                : CupertinoColors.secondarySystemBackground,
-                            borderRadius: BorderRadius.circular(10),
+                          decoration: GlassPalette.decoration(
+                            context,
+                            radius: 16,
+                            tint: GlassPalette.fieldColor(context),
                           ),
                         )),
                     const SizedBox(height: 16),
@@ -80,11 +76,10 @@ class LoginForm extends StatelessWidget {
                                     .textStyle),
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: brightness == Brightness.light
-                                ? CupertinoColors.systemBackground
-                                : CupertinoColors.secondarySystemBackground,
-                            borderRadius: BorderRadius.circular(10),
+                          decoration: GlassPalette.decoration(
+                            context,
+                            radius: 16,
+                            tint: GlassPalette.fieldColor(context),
                           ),
                         )),
                     const SizedBox(height: 16),
@@ -135,16 +130,18 @@ class LoginForm extends StatelessWidget {
                         },
                         color: buttonPressed.value
                             ? CupertinoColors.inactiveGray
-                            : CupertinoColors.activeBlue,
+                            : GlassPalette.accent,
                         child: SizedBox(
                           height: 24,
                           width: 60,
                           child: Center(
                               child: buttonPressed.value
                                   ? const CupertinoActivityIndicator()
-                                  : const Text('登录',
+                                  : Text('登录',
                                       style: TextStyle(
-                                          color: CupertinoColors.white))),
+                                          color: GlassPalette.isDark(context)
+                                              ? const Color(0xFF0B1220)
+                                              : CupertinoColors.white))),
                         ))),
                   ],
                 ),

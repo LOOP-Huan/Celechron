@@ -1,4 +1,6 @@
+import 'package:celechron/design/glass_list_section.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/model/task.dart';
 import 'package:celechron/utils/utils.dart';
 import 'package:celechron/utils/time_helper.dart';
@@ -14,6 +16,11 @@ class TaskEditPage extends StatefulWidget {
 class _TaskEditPageState extends State<TaskEditPage> {
   late Task now;
   int __got = 0;
+
+  Widget _pickerSheet({required SizedBox child}) => SizedBox(
+        height: child.height,
+        child: GlassPageScaffold(child: child),
+      );
 
   void saveAndExit() {
     if (now.type == TaskType.fixed && !now.startTime.isBefore(now.endTime)) {
@@ -127,11 +134,9 @@ class _TaskEditPageState extends State<TaskEditPage> {
       deadlineRepeatTypeNameList.add(deadlineRepeatTypeName[i]!);
     }
 
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoColors.systemGroupedBackground,
+    return GlassPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoDynamicColor.resolve(
-            CupertinoColors.systemGroupedBackground, context),
+        backgroundColor: GlassPalette.barColor,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: exitWithoutSave,
@@ -158,6 +163,8 @@ class _TaskEditPageState extends State<TaskEditPage> {
                     bottom: 8.0,
                   ),
                   child: CupertinoSlidingSegmentedControl<TaskType>(
+                    backgroundColor: GlassPalette.fieldColor(context),
+                    thumbColor: GlassPalette.surfaceColor(context),
                     groupValue: now.type,
                     children: <TaskType, Widget>{
                       TaskType.deadline: Padding(
@@ -181,7 +188,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                     },
                   ),
                 ),
-                CupertinoListSection.insetGrouped(
+                GlassListSection(
                   children: [
                     CupertinoTextFormFieldRow(
                       placeholder: '任务名',
@@ -203,7 +210,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                           await showCupertinoModalPopup(
                               context: context,
                               builder: (BuildContext context) {
-                                return CupertinoPageScaffold(
+                                return _pickerSheet(
                                   child: SizedBox(
                                     height: MediaQuery.of(context)
                                             .copyWith()
@@ -242,7 +249,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                         await showCupertinoModalPopup(
                             context: context,
                             builder: (BuildContext context) {
-                              return CupertinoPageScaffold(
+                              return _pickerSheet(
                                 child: SizedBox(
                                   height: MediaQuery.of(context)
                                           .copyWith()
@@ -274,7 +281,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                   ],
                 ),
                 if (now.type == TaskType.deadline)
-                  CupertinoListSection.insetGrouped(
+                  GlassListSection(
                     header: const Text('时间安排'),
                     children: [
                       CupertinoListTile(
@@ -284,7 +291,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                           await showCupertinoModalPopup(
                               context: context,
                               builder: (BuildContext context) {
-                                return CupertinoPageScaffold(
+                                return _pickerSheet(
                                   child: SizedBox(
                                     height: MediaQuery.of(context)
                                             .copyWith()
@@ -391,7 +398,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                           await showCupertinoModalPopup(
                               context: context,
                               builder: (BuildContext context) {
-                                return CupertinoPageScaffold(
+                                return _pickerSheet(
                                   child: SizedBox(
                                     height: MediaQuery.of(context)
                                             .copyWith()
@@ -488,7 +495,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                     ],
                   ),
                 if (now.type == TaskType.fixed) ...[
-                  CupertinoListSection.insetGrouped(
+                  GlassListSection(
                     header: const Text('日程设置'),
                     children: [
                       CupertinoListTile(
@@ -498,7 +505,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                           await showCupertinoModalPopup(
                               context: context,
                               builder: (BuildContext context) {
-                                return CupertinoPageScaffold(
+                                return _pickerSheet(
                                   child: SizedBox(
                                     height: MediaQuery.of(context)
                                             .copyWith()
@@ -550,7 +557,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                             await showCupertinoModalPopup(
                                 context: context,
                                 builder: (BuildContext context) {
-                                  return CupertinoPageScaffold(
+                                  return _pickerSheet(
                                     child: SizedBox(
                                       height: MediaQuery.of(context)
                                               .copyWith()
@@ -592,7 +599,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                             await showCupertinoModalPopup(
                                 context: context,
                                 builder: (BuildContext context) {
-                                  return CupertinoPageScaffold(
+                                  return _pickerSheet(
                                     child: SizedBox(
                                       height: MediaQuery.of(context)
                                               .copyWith()
@@ -637,7 +644,7 @@ class _TaskEditPageState extends State<TaskEditPage> {
                   //   ),
                   // ),
                 ],
-                CupertinoListSection.insetGrouped(
+                GlassListSection(
                   header: const Text('附加信息'),
                   children: [
                     CupertinoTextFormFieldRow(

@@ -1,3 +1,5 @@
+import 'package:celechron/design/glass_list_section.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'dart:math';
 
 import 'package:celechron/design/custom_colors.dart';
@@ -59,6 +61,9 @@ class CourseSchedulePage extends StatelessWidget {
                                 _courseScheduleController.semesterIndex
                                     .refresh();
                               },
+                              selected: _courseScheduleController
+                                      .semesterIndex.value ==
+                                  index,
                               backgroundColor: _courseScheduleController
                                           .semesterIndex.value ==
                                       index
@@ -467,9 +472,7 @@ class CourseSchedulePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoDynamicColor.resolve(
-          CupertinoColors.systemGroupedBackground, context),
+    return GlassPageScaffold(
       child: CustomScrollView(
         slivers: [
           const CelechronSliverTextHeader(subtitle: '课表'),
@@ -494,7 +497,7 @@ class CourseSchedulePage extends StatelessWidget {
                   _courseSchedule(context),
                   const SizedBox(height: 20),
                   Obx(
-                    () => CupertinoListSection.insetGrouped(
+                    () => GlassListSection(
                       margin: const EdgeInsetsDirectional.fromSTEB(
                           0.0, 0.0, 0.0, 10.0),
                       additionalDividerMargin: 2,

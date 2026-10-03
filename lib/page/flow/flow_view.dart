@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:celechron/design/custom_colors.dart';
 import 'package:celechron/design/custom_decoration.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/utils/time_helper.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -20,6 +21,11 @@ class FlowPage extends StatelessWidget {
 
   final _flowController = Get.put(FlowController());
   final db = Get.find<DatabaseHelper>(tag: 'db');
+
+  Widget _pickerSheet({required SizedBox child}) => SizedBox(
+        height: child.height,
+        child: GlassPageScaffold(child: child),
+      );
 
   Widget createFirst(context, Period period, String? title) {
     Color themeColor =
@@ -451,7 +457,7 @@ class FlowPage extends StatelessWidget {
                         await showCupertinoModalPopup(
                             context: context,
                             builder: (BuildContext context) {
-                              return CupertinoPageScaffold(
+                              return _pickerSheet(
                                 child: SizedBox(
                                   height: MediaQuery.of(context)
                                           .copyWith()
@@ -570,12 +576,13 @@ class FlowPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       child: SafeArea(
         child: CustomScrollView(
           // Allow the list to shrink wrap around the top and bottom bars.
           slivers: [
             CupertinoSliverNavigationBar(
+              backgroundColor: GlassPalette.barColor,
               largeTitle: const Text('接下来'),
               stretch: true,
               border: null,
@@ -600,33 +607,39 @@ class FlowPage extends StatelessWidget {
             SliverToBoxAdapter(
               child: Obx(() {
                 if (_flowController.isFlowListOutdated()) {
-                  return MaterialBanner(
-                    backgroundColor: CupertinoDynamicColor.resolve(
-                        CupertinoColors.secondarySystemBackground, context),
-                    dividerColor: Colors.transparent,
-                    content: const Text('规划方案已过期'),
-                    contentTextStyle: TextStyle(
-                      fontSize: 16,
-                      color:
-                          CupertinoTheme.of(context).textTheme.textStyle.color!,
+                  return GlassSurface(
+                    margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    borderRadius: 20,
+                    tint: CupertinoColors.systemOrange,
+                    child: MaterialBanner(
+                      backgroundColor: CupertinoColors.transparent,
+                      dividerColor: Colors.transparent,
+                      content: const Text('规划方案已过期'),
+                      contentTextStyle: TextStyle(
+                        fontSize: 16,
+                        color: CupertinoTheme.of(context)
+                            .textTheme
+                            .textStyle
+                            .color!,
+                      ),
+                      leading:
+                          const Icon(CupertinoIcons.exclamationmark_triangle),
+                      actions: [
+                        CupertinoButton(
+                          child: const Text('忽略'),
+                          onPressed: () {
+                            _flowController.updateDeadlineListTime();
+                          },
+                        ),
+                        CupertinoButton(
+                          onPressed: () async {
+                            await newFlowList(context);
+                            _flowController.flowList.refresh();
+                          },
+                          child: const Text('重新规划'),
+                        ),
+                      ],
                     ),
-                    leading:
-                        const Icon(CupertinoIcons.exclamationmark_triangle),
-                    actions: [
-                      CupertinoButton(
-                        child: const Text('忽略'),
-                        onPressed: () {
-                          _flowController.updateDeadlineListTime();
-                        },
-                      ),
-                      CupertinoButton(
-                        onPressed: () async {
-                          await newFlowList(context);
-                          _flowController.flowList.refresh();
-                        },
-                        child: const Text('重新规划'),
-                      ),
-                    ],
                   );
                 }
                 return const SizedBox();
@@ -641,10 +654,14 @@ class FlowPage extends StatelessWidget {
                       child: Column(
                         children: [
                           const Spacer(),
-                          Text('今日无事可做',
-                              style: CupertinoTheme.of(context)
-                                  .textTheme
-                                  .textStyle),
+                          GlassSurface(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 28, vertical: 22),
+                            child: Text('今日无事可做',
+                                style: CupertinoTheme.of(context)
+                                    .textTheme
+                                    .textStyle),
+                          ),
                           const Spacer(),
                         ],
                       ),

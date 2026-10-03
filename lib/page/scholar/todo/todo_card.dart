@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/model/todo.dart';
 import 'package:celechron/utils/utils.dart';
 import 'package:flutter/cupertino.dart';
@@ -9,24 +10,9 @@ class TodoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
-    return Container(
+    return GlassSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        color: brightness == Brightness.dark
-            ? CupertinoColors.secondarySystemFill
-            : CupertinoColors.systemGroupedBackground,
-        // boxShadow
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(0, 0, 0, 0.05),
-            offset: Offset(0, 2),
-            blurRadius: 4,
-          ),
-        ],
-      ),
+      borderRadius: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -56,9 +42,8 @@ class TodoCard extends StatelessWidget {
             style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: brightness == Brightness.dark
-                      ? CupertinoColors.systemBackground
-                      : CupertinoTheme.of(context).textTheme.textStyle.color,
+                  color: CupertinoDynamicColor.resolve(
+                      CupertinoColors.label, context),
                 ),
           ),
           const SizedBox(height: 4),
@@ -67,9 +52,8 @@ class TodoCard extends StatelessWidget {
             style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: brightness == Brightness.dark
-                      ? CupertinoColors.systemBackground
-                      : CupertinoTheme.of(context).textTheme.textStyle.color,
+                  color: CupertinoDynamicColor.resolve(
+                      CupertinoColors.label, context),
                 ),
           ),
         ],

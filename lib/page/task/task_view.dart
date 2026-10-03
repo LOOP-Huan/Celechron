@@ -1,4 +1,5 @@
 import 'package:celechron/design/custom_decoration.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/page/flow/flow_controller.dart';
 import 'package:celechron/page/task/task_controller.dart';
 import 'package:celechron/utils/utils.dart';
@@ -236,7 +237,9 @@ class TaskPage extends StatelessWidget {
                     ),
                   ),
                 )
-              : null,
+              // secondaryBackground requires a non-null primary background.
+              // Fixed schedules only reveal the delete background on left swipe.
+              : const SizedBox.shrink(),
           secondaryBackground: Container(
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 16),
@@ -535,11 +538,12 @@ class TaskPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
             CupertinoSliverNavigationBar(
+              backgroundColor: GlassPalette.barColor,
               largeTitle: const Text('任务'),
               border: null,
               stretch: true,
@@ -646,10 +650,14 @@ class TaskPage extends StatelessWidget {
                   child: Column(
                     children: [
                       const Spacer(),
-                      Text(
-                        '没有任务',
-                        style: CupertinoTheme.of(context).textTheme.textStyle,
-                        textAlign: TextAlign.center,
+                      GlassSurface(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 28, vertical: 22),
+                        child: Text(
+                          '没有任务',
+                          style: CupertinoTheme.of(context).textTheme.textStyle,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                       const Spacer(),
                     ],

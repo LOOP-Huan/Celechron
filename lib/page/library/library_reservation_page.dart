@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/http/zjuServices/library_booking.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
@@ -715,8 +716,13 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     if (_busy || _availability == null) return;
     final rules = _availability!.rules;
     Navigator.of(context).push(CupertinoPageRoute<void>(
-      builder: (_) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('预约须知')),
+      builder: (_) => GlassPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          backgroundColor:
+              CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
+          border: null,
+          middle: const Text('预约须知'),
+        ),
         child: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -736,8 +742,11 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_busy) _previousStep();
       },
-      child: CupertinoPageScaffold(
+      child: GlassPageScaffold(
         navigationBar: CupertinoNavigationBar(
+          backgroundColor:
+              CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
+          border: null,
           middle: const Text('研讨间预约'),
           automaticallyImplyLeading: false,
           leading: hasPreviousStep || Navigator.of(context).canPop()
@@ -785,7 +794,6 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
             ],
           ),
         ),
-        backgroundColor: CupertinoColors.systemGroupedBackground,
         child: SafeArea(
           child: _accessMessage != null
               ? Center(
@@ -800,25 +808,31 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                       child: SizedBox(
                         width: double.infinity,
-                        child: CupertinoSlidingSegmentedControl<int>(
-                          key: const ValueKey('library-section-tabs'),
-                          groupValue: _section,
-                          children: const {
-                            0: Text('预约研讨间'),
-                            1: Text('我的预约'),
-                          },
-                          onValueChanged: (value) {
-                            if (_busy || value == null || value == _section) {
-                              return;
-                            }
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            setState(() {
-                              _section = value;
-                              _error = null;
-                            });
-                            _scrollToTop();
-                            if (value == 1) unawaited(_loadReservations());
-                          },
+                        child: GlassSurface(
+                          borderRadius: 22,
+                          padding: const EdgeInsets.all(3),
+                          child: CupertinoSlidingSegmentedControl<int>(
+                            backgroundColor: CupertinoColors.transparent,
+                            thumbColor: GlassPalette.surfaceColor(context),
+                            key: const ValueKey('library-section-tabs'),
+                            groupValue: _section,
+                            children: const {
+                              0: Text('预约研讨间'),
+                              1: Text('我的预约'),
+                            },
+                            onValueChanged: (value) {
+                              if (_busy || value == null || value == _section) {
+                                return;
+                              }
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              setState(() {
+                                _section = value;
+                                _error = null;
+                              });
+                              _scrollToTop();
+                              if (value == 1) unawaited(_loadReservations());
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -858,21 +872,12 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     );
   }
 
-  Widget _panel(List<Widget> children) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: CupertinoDynamicColor.resolve(
-              CupertinoColors.secondarySystemGroupedBackground,
-              context,
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: children,
-          ),
+  Widget _panel(List<Widget> children) => GlassSurface(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
         ),
       );
 
@@ -1034,26 +1039,23 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     ];
   }
 
-  Widget _stepAction() => Container(
+  Widget _stepAction() => SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        decoration: BoxDecoration(
-          color: CupertinoDynamicColor.resolve(
-              CupertinoColors.systemGroupedBackground, context),
-          border: Border(
-              top: BorderSide(
-                  color: CupertinoDynamicColor.resolve(
-                      CupertinoColors.separator, context))),
-        ),
-        child: CupertinoButton.filled(
-          key: ValueKey(_step == 1 ? 'library-next' : 'library-submit'),
-          onPressed:
-              _busy || !_canContinue || (_step == 2 && _submissionUncertain)
-                  ? null
-                  : _step == 1
-                      ? () => _showStep(2)
-                      : _submit,
-          child: Text(_step == 1 ? '填写预约信息' : '确认预约信息'),
+        child: GlassSurface(
+          margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          padding: const EdgeInsets.all(8),
+          blur: true,
+          child: CupertinoButton.filled(
+            key: ValueKey(_step == 1 ? 'library-next' : 'library-submit'),
+            borderRadius: BorderRadius.circular(18),
+            onPressed:
+                _busy || !_canContinue || (_step == 2 && _submissionUncertain)
+                    ? null
+                    : _step == 1
+                        ? () => _showStep(2)
+                        : _submit,
+            child: Text(_step == 1 ? '填写预约信息' : '确认预约信息'),
+          ),
         ),
       );
 
@@ -1087,6 +1089,8 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
         if (maxParticipants <= 0 || count < maxParticipants) ...[
           CupertinoTextField(
             key: const ValueKey('library-participant-id'),
+            decoration: GlassPalette.decoration(context,
+                radius: 14, tint: GlassPalette.fieldColor(context)),
             controller: _participantId,
             enabled: !_busy,
             placeholder: '成员学工号',
@@ -1140,6 +1144,8 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
             const SizedBox(height: 8),
             CupertinoTextField(
               key: ValueKey(key),
+              decoration: GlassPalette.decoration(context,
+                  radius: 14, tint: GlassPalette.fieldColor(context)),
               controller: controller,
               enabled: !_busy,
               placeholder: '请填写$label',

@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:extended_sliver/extended_sliver.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -41,6 +42,9 @@ class CourseListPage extends StatelessWidget {
                               _courseListController.semesterIndex.value = index;
                               _courseListController.semesterIndex.refresh();
                             },
+                            selected:
+                                _courseListController.semesterIndex.value ==
+                                    index,
                             backgroundColor:
                                 _courseListController.semesterIndex.value ==
                                         index
@@ -59,9 +63,7 @@ class CourseListPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoDynamicColor.resolve(
-          CupertinoColors.systemGroupedBackground, context),
+    return GlassPageScaffold(
       child: CustomScrollView(
         slivers: [
           const CelechronSliverTextHeader(subtitle: '课程'),

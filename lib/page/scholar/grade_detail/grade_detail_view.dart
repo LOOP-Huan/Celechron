@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/custom_colors.dart';
 import 'package:celechron/utils/tuple.dart';
 import 'package:celechron/model/grade.dart';
@@ -352,9 +353,7 @@ class GradeDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoDynamicColor.resolve(
-          CupertinoColors.systemGroupedBackground, context),
+    return GlassPageScaffold(
       child: CustomScrollView(
         slivers: [
           CelechronSliverTextHeader(

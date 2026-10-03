@@ -189,8 +189,11 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
 }
 
 Future<void> _openPage(WidgetTester tester, _FakeSeatClient client,
-    {Scholar? scholar, double textScale = 1}) async {
+    {Scholar? scholar,
+    double textScale = 1,
+    Brightness brightness = Brightness.light}) async {
   await tester.pumpWidget(CupertinoApp(
+    theme: CupertinoThemeData(brightness: brightness),
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(context)
           .copyWith(textScaler: TextScaler.linear(textScale)),
@@ -573,37 +576,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('320小屏两倍字体及键盘弹出时没有布局溢出', (tester) async {
-    tester.view.physicalSize = const Size(320, 568);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetViewInsets);
-    final client = _FakeSeatClient()..generatedSeatCount = 25;
-    await _openPage(tester, client, textScale: 2);
-    expect(tester.takeException(), isNull);
-    await _selectArea(tester);
-    expect(tester.takeException(), isNull);
-    final first = find.byKey(const ValueKey('seat-item-bulk-0'));
-    await _scrollTo(tester, first);
-    await tester.tap(first);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
-        findsOneWidget);
-    expect(tester.takeException(), isNull);
-    final search = find.byKey(const ValueKey('seat-search'));
-    await _scrollTo(tester, search, delta: -250);
-    await tester.enterText(search, 'A001');
-    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(find.byKey(const ValueKey('seat-section-tabs')), findsOneWidget);
-    tester.view.resetViewInsets();
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
-        findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+  for (final brightness in Brightness.values) {
+    testWidgets('320小屏两倍字体及键盘弹出时没有布局溢出（${brightness.name}）', (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      final client = _FakeSeatClient()..generatedSeatCount = 25;
+      await _openPage(tester, client, textScale: 2, brightness: brightness);
+      expect(tester.takeException(), isNull);
+      await _selectArea(tester);
+      expect(tester.takeException(), isNull);
+      final first = find.byKey(const ValueKey('seat-item-bulk-0'));
+      await _scrollTo(tester, first);
+      await tester.tap(first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final search = find.byKey(const ValueKey('seat-search'));
+      await _scrollTo(tester, search, delta: -250);
+      await tester.enterText(search, 'A001');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('seat-section-tabs')), findsOneWidget);
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('seat-submit')).hitTestable(),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('预约须知独立打开，官网仅在顶部更多菜单中', (tester) async {
     const rules = '完整须知：按所选阅览区的要求使用座位。';

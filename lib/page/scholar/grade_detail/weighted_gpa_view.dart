@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import 'package:celechron/design/custom_colors.dart';
@@ -149,9 +150,7 @@ class WeightedGpaPage extends StatelessWidget {
       // 按课程名排序
       affectGpaGrades.sort((a, b) => a.name.compareTo(b.name));
 
-      return CupertinoPageScaffold(
-        backgroundColor: CupertinoDynamicColor.resolve(
-            CupertinoColors.systemGroupedBackground, context),
+      return GlassPageScaffold(
         child: CustomScrollView(
           slivers: [
             CelechronSliverTextHeader(
@@ -228,23 +227,10 @@ class WeightedGpaPage extends StatelessWidget {
                         children: [
                           const SizedBox(width: 18),
                           Expanded(
-                            child: Container(
+                            child: GlassSurface(
                               padding: const EdgeInsets.only(
                                   left: 12, right: 12, bottom: 16, top: 8),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                color: CupertinoDynamicColor.resolve(
-                                    CupertinoColors.systemBackground, context),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: CupertinoColors.black
-                                        .withValues(alpha: 0.1),
-                                    spreadRadius: 0,
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
+                              borderRadius: 20,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [

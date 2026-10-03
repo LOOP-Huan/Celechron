@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/multiple_columns.dart';
 import 'package:celechron/model/practice_score_item.dart';
 import 'package:celechron/model/scholar.dart';
@@ -95,13 +96,9 @@ class PracticeScorePage extends StatelessWidget {
     final excluded =
         items.where((item) => !item.countsTowardTotal).toList(growable: false);
 
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: Text('$_categoryName项目'),
-      ),
-      backgroundColor: CupertinoDynamicColor.resolve(
-        CupertinoColors.systemGroupedBackground,
-        context,
       ),
       child: SafeArea(
         child: ListView(
@@ -187,12 +184,8 @@ class PracticeScoreDetailPage extends StatelessWidget {
       ('活动结束时间', _dateTime(item.activityEnd)),
       ('最近更新时间', _dateTime(item.updatedAt)),
     ];
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       navigationBar: const CupertinoNavigationBar(middle: Text('实践项目详情')),
-      backgroundColor: CupertinoDynamicColor.resolve(
-        CupertinoColors.systemGroupedBackground,
-        context,
-      ),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -462,25 +455,20 @@ class _Card extends StatelessWidget {
   const _Card({required this.child});
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: CupertinoDynamicColor.resolve(
-            CupertinoColors.secondarySystemGroupedBackground,
-            context,
-          ),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: DefaultTextStyle(
-          style: TextStyle(
-            color: CupertinoDynamicColor.resolve(
-              CupertinoColors.label,
-              context,
+        child: GlassSurface(
+          padding: const EdgeInsets.all(16),
+          child: DefaultTextStyle(
+            style: TextStyle(
+              color: CupertinoDynamicColor.resolve(
+                CupertinoColors.label,
+                context,
+              ),
+              fontSize: 15,
             ),
-            fontSize: 15,
+            child: child,
           ),
-          child: child,
         ),
       );
 }

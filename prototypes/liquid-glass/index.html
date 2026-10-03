@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Celechron · 玻璃材质实验</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light; font: 15px/1.5 -apple-system,BlinkMacSystemFont,"Noto Sans CJK SC","Microsoft YaHei",sans-serif; color:#202728; background:#f7f7f4; }
+  * { box-sizing:border-box; }
+  body { margin:0; }
+  main { max-width:1080px; margin:0 auto; padding:32px 28px 24px; }
+  header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:20px; }
+  .eyebrow { font-size:11px; letter-spacing:.17em; color:#6c7475; font-weight:600; }
+  h1 { margin:8px 0 0; font-size:clamp(23px,3vw,32px); font-weight:600; letter-spacing:-.04em; }
+  header p { max-width:330px; margin:0 0 3px; font-size:13px; color:#697273; }
+  #stage { position:relative; height:520px; overflow:hidden; border-radius:20px; background:#eceae5; border:1px solid #d9ddda; touch-action:pan-y; }
+  #render { display:block; width:100%; height:100%; }
+  .stage-label { position:absolute; left:22px; top:20px; display:flex; align-items:center; gap:8px; font-size:11px; color:#455158; letter-spacing:.09em; pointer-events:none; }
+  .dot { width:6px; height:6px; border-radius:100%; background:#40594d; }
+  #glass-handle { position:absolute; display:flex; flex-direction:column; justify-content:flex-start; align-items:flex-start; padding:20px 24px; margin:0; border:0; border-radius:40px; background:transparent; color:#162225; text-align:left; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; outline-offset:5px; }
+  #glass-handle:active { cursor:grabbing; }
+  #glass-handle:focus-visible { outline:2px solid #193d58; }
+  .lens-top { display:flex; gap:10px; align-items:center; font-weight:600; font-size:14px; text-shadow:0 1px 2px #ffffff9c; }
+  .lens-top svg { flex:none; width:20px; height:20px; }
+  .lens-bottom { position:absolute; bottom:21px; left:24px; right:24px; display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:500; text-shadow:0 1px 2px #fff; }
+  .lens-bottom span:last-child { font-size:22px; font-weight:300; }
+  #stage[data-scene="grid"] .lens-top,#stage[data-scene="grid"] .lens-bottom { visibility:hidden; }
+  #hint { position:absolute; bottom:15px; left:20px; right:20px; font-size:11px; color:#596663; pointer-events:none; }
+  #fallback { display:none; position:absolute; inset:0; padding:48px; align-items:center; justify-content:center; color:#462e25; background:#faf7ed; text-align:center; }
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:18px 0; }
+  button.control,select { appearance:none; background:#fff; border:1px solid #d7dcda; border-radius:10px; padding:9px 14px; font:inherit; font-size:13px; color:#293637; cursor:pointer; min-height:40px; }
+  button.control[aria-pressed="true"] { border-color:#334d49; color:#fff; background:#334d49; }
+  button:focus-visible,select:focus-visible,input:focus-visible { outline:2px solid #2b6c70; outline-offset:3px; }
+  .range { display:flex; align-items:center; gap:10px; margin-left:auto; font-size:12px; color:#626e6a; }
+  .range + .range { margin-left:14px; }
+  input[type=range] { width:120px; accent-color:#385d56; }
+  output { width:25px; color:#243b36; font-variant-numeric:tabular-nums; }
+  footer { display:flex; justify-content:space-between; gap:20px; color:#737c78; font-size:11px; border-top:1px solid #dfe3de; padding-top:13px; }
+  footer strong { color:#42534c; font-weight:500; }
+  @media(max-width:600px) {
+    main { padding:22px 16px 18px; }
+    header { display:block; margin-bottom:16px; }
+    header p { margin:9px 0 0; font-size:12px; }
+    #stage { height:440px; border-radius:16px; }
+    .stage-label { left:16px; top:15px; }
+    .controls { gap:8px; padding:14px 0; }
+    button.control,select { padding:8px 11px; font-size:12px; }
+    .range,.range + .range { width:100%; margin-left:0; justify-content:flex-end; }
+    .range label { margin-right:auto; }
+    input[type=range] { width:48%; }
+    footer { display:block; font-size:10px; }
+    footer span { display:block; margin-bottom:5px; }
+  }
+</style>
+<main>
+  <header>
+    <div><div class="eyebrow">CELECHRON / MATERIAL STUDY 01</div><h1>一块可以看穿的玻璃。</h1></div>
+    <p>拖动它，看背景的文字和线条如何穿过中心，在边缘弯折。</p>
+  </header>
+  <div id="stage">
+    <canvas id="render" aria-label="动态背景与玻璃折射演示"></canvas>
+    <div class="stage-label"><i class="dot"></i><span id="scene-label">日程背景 · 动态透射</span></div>
+    <button id="glass-handle" aria-label="拖动玻璃，或使用方向键移动">
+      <div class="lens-top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5c4-1 6-1 9 1 3-2 5-2 9-1v14c-4-1-6-1-9 1-3-2-5-2-9-1zM12 6v14"/></svg>图书馆</div>
+      <div class="lens-bottom"><span>研讨间预约</span><span aria-hidden="true">↗</span></div>
+    </button>
+    <div id="hint">可拖动 · 背景为演示数据</div>
+    <div id="fallback" role="alert"></div>
+  </div>
+  <div class="controls">
+    <button class="control" id="pause" aria-pressed="false">暂停背景</button>
+    <button class="control" id="refraction" aria-pressed="true">折射：开</button>
+    <select id="scene" aria-label="选择背景"><option value="schedule">日程背景</option><option value="grid">线条与文字</option></select>
+    <div class="range"><label for="strength">折射强度</label><input id="strength" type="range" min="0" max="180" value="115"><output id="strength-value">1.15</output></div>
+    <div class="range"><label for="softness">轻微模糊</label><input id="softness" type="range" min="0" max="200" value="90"><output id="softness-value">0.90</output></div>
+  </div>
+  <footer><span><strong>观察边缘</strong> · 暂停背景再切换折射，比较同一处文字。</span><span>独立材质样例 · 尚未接入 App</span></footer>
+</main>
+<script>
+(() => {
+  'use strict';
+  const canvas=document.querySelector('#render'), stage=document.querySelector('#stage');
+  const handle=document.querySelector('#glass-handle');
+  const pause=document.querySelector('#pause'), toggle=document.querySelector('#refraction');
+  const select=document.querySelector('#scene'), strength=document.querySelector('#strength'),softness=document.querySelector('#softness');
+  const source=document.createElement('canvas');
+  const ctx=source.getContext('2d',{alpha:false});
+  const gl=canvas.getContext('webgl',{alpha:false,antialias:false,preserveDrawingBuffer:true,powerPreference:'low-power'});
+  const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
+  const state={time:0,autoMotion:!reduceMotion.matches,refraction:true,scene:'schedule',strength:1.15,blur:.9,
+    x:.53,y:.50,width:1,height:1,dpr:1,lensW:280,lensH:176,lightX:-.55,lightY:-.83,ready:false};
+  let stopped=false,last=performance.now(),raf=0;
+  function fail(message) {
+    stopped=true; cancelAnimationFrame(raf); state.ready=false;
+    const notice=document.querySelector('#fallback');
+    notice.textContent=message; notice.style.display='flex'; handle.hidden=true;
+    document.querySelectorAll('.controls button,.controls input,.controls select').forEach(el=>el.disabled=true);
+  }
+  const vertex=`attribute vec2 a_position; varying vec2 v_uv;
+    void main(){v_uv=a_position*.5+.5;gl_Position=vec4(a_position,0.,1.);}`;
+  const fragment=`
+    precision highp float;
+    varying vec2 v_uv;
+    uniform sampler2D u_scene;
+    uniform vec2 u_size,u_center,u_half,u_light;
+    uniform float u_radius,u_strength,u_refraction,u_blur;
+    float sdf(vec2 p){vec2 q=abs(p)-u_half+u_radius;return length(max(q,0.))+min(max(q.x,q.y),0.)-u_radius;}
+    vec3 sampleScene(vec2 p){return texture2D(u_scene,clamp(vec2(p.x/u_size.x,1.-p.y/u_size.y),vec2(.001),vec2(.999))).rgb;}
+    void main(){
+      vec2 p=vec2(v_uv.x,1.-v_uv.y)*u_size;
+      vec2 q=p-u_center;
+      float d=sdf(q);
+      vec3 base=sampleScene(p);
+      // Soft contact shadow exists outside the material, never as a dark fill.
+      float shadow=exp(-max(d,0.)/7.)*.10*smoothstep(-.2,3.,d);
+      base*=1.-shadow;
+      if(d>1.5){gl_FragColor=vec4(base,1.);return;}
+      float depth=max(-d,0.);
+      float bevel=23.;
+      float t=clamp(depth/bevel,0.,1.);
+      float arc=sqrt(max(.0,1.-(1.-t)*(1.-t)));
+      // Rounded glass cross-section: the same normal controls refraction and light.
+      vec2 outward=normalize(vec2(sdf(q+vec2(.5,0.))-sdf(q-vec2(.5,0.)),
+                                   sdf(q+vec2(0.,.5))-sdf(q-vec2(0.,.5)))+vec2(.00001));
+      float slope=(20./bevel)*(1.-t)/max(.12,arc);
+      vec3 normal=normalize(vec3(outward*slope,1.));
+      vec3 ray=refract(vec3(0.,0.,-1.),normal,1./1.46);
+      float thickness=8.+20.*arc;
+      vec2 bend=ray.xy/max(.25,abs(ray.z))*thickness;
+      // Clear center; a very slight lens magnification avoids a flat cutout.
+      vec2 optical=(q/1.018-q+bend)*u_strength*u_refraction;
+      vec2 uv=p+optical;
+      vec3 glass=sampleScene(uv);
+      // A small Gaussian kernel softens only the transmitted background.
+      // The surface glints below and the DOM foreground remain sharp.
+      float b=u_blur*1.5;
+      if(b>.001){
+        glass=glass*.25+
+          (sampleScene(uv+vec2(b,0.))+sampleScene(uv-vec2(b,0.))+
+           sampleScene(uv+vec2(0.,b))+sampleScene(uv-vec2(0.,b)))*.125+
+          (sampleScene(uv+vec2(b,b))+sampleScene(uv+vec2(-b,b))+
+           sampleScene(uv+vec2(b,-b))+sampleScene(uv-vec2(b,b)))*.0625;
+      }
+      float fresnel=.025+.975*pow(1.-normal.z,5.);
+      vec3 light=normalize(vec3(u_light,.65));
+      float reflection=pow(max(dot(normal,normalize(light+vec3(0.,0.,1.))),0.),14.);
+      float rim=exp(-pow((d+.8)/.75,2.));
+      float lip=exp(-pow((depth-3.)/1.5,2.));
+      float facing=dot(outward,normalize(u_light));
+      // Thin specular glints follow the surface. No colored panel gradient.
+      float highlight=reflection*.10+fresnel*.13+rim*(.24+.32*max(facing,0.));
+      glass=mix(glass,vec3(1.),clamp(highlight,0.,.62));
+      glass*=1.-lip*.075*max(-facing,0.);
+      float mask=1.-smoothstep(-.6,.6,d);
+      gl_FragColor=vec4(mix(base,glass,mask),1.);
+    }`;
+  function shader(type,text){const s=gl.createShader(type);gl.shaderSource(s,text);gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+  if(!gl){fail('此浏览器未启用 WebGL，无法显示折射样例。请用支持 WebGL 的浏览器打开。');return;}
+  let program,texture,uniforms={};
+  try {
+    program=gl.createProgram(); gl.attachShader(program,shader(gl.VERTEX_SHADER,vertex));
+    gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);
+    if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+    const position=gl.getAttribLocation(program,'a_position');gl.enableVertexAttribArray(position);
+    gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
+    texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+    ['size','center','half','light','radius','strength','refraction','blur','scene'].forEach(n=>uniforms[n]=gl.getUniformLocation(program,'u_'+n));
+    gl.uniform1i(uniforms.scene,0);state.ready=true;
+  } catch(error) {console.error(error);fail('折射渲染初始化失败，当前浏览器无法显示此样例。');return;}
+  function roundRect(x,y,w,h,r,fill){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();}
+  function text(value,x,y,size=20,color='#17282d',weight=500){ctx.fillStyle=color;ctx.font=weight+' '+size+'px -apple-system,BlinkMacSystemFont,"Noto Sans CJK SC",sans-serif';ctx.fillText(value,x,y);}
+  function paintScene(){
+    const w=state.width,h=state.height,time=state.time;
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);ctx.fillStyle='#eeeae1';ctx.fillRect(0,0,w,h);
+    if(state.scene==='grid'){
+      ctx.fillStyle='#f4f2e9';ctx.fillRect(0,0,w,h);
+      const shift=32*Math.sin(time*.5);
+      ctx.strokeStyle='#6f8988';ctx.lineWidth=.8;
+      ctx.beginPath();for(let x=-60;x<w+60;x+=28){ctx.moveTo(x+shift,0);ctx.lineTo(x+shift,h);}
+      for(let y=0;y<h+28;y+=28){ctx.moveTo(0,y);ctx.lineTo(w,y);}ctx.stroke();
+      const barX=w*.52+Math.sin(time*.7)*w*.19;
+      ctx.fillStyle='#bf4639';ctx.fillRect(barX,55,42,h-110);
+      ctx.fillStyle='#174d6b';ctx.fillRect(0,h*.46,w,46);
+      text('Aa 0123',w*.17+Math.sin(time*.42)*35,h*.40,Math.min(w*.15,76),'#1c2b2a',600);
+      text('透过玻璃看世界',w*.12-Math.sin(time*.42)*30,h*.69,Math.min(w*.067,38),'#1c2b2a',600);
+    } else {
+      ctx.fillStyle='#f2f0e9';ctx.fillRect(0,0,w,h);
+      const circleX=w*.27+Math.sin(time*.55)*w*.23;
+      ctx.fillStyle='#ed785b';ctx.beginPath();ctx.arc(circleX,h*.34,Math.min(w*.23,145),0,Math.PI*2);ctx.fill();
+      ctx.save();ctx.translate(w*.74+Math.cos(time*.4)*50,h*.68);ctx.rotate(-.35+Math.sin(time*.37)*.2);
+      roundRect(-160,-75,320,150,36,'#608ea6');ctx.restore();
+      // Real hard edges and glyphs make transmission and local distortion visible.
+      text('周六，10 月 3 日',30,92,12,'#374341',500);
+      text('今天',28,145,38,'#1e312e',600);
+      text('留一点时间，给自己。',30,174,13,'#4f5b55',400);
+      const offset=Math.sin(time*.55)*58;
+      const x=w<600?32:w*.44;
+      const cw=Math.min(326,w-64);
+      const rows=[['08:30','晨间阅读','文学 · 30 分钟','#f5d784'],['10:00','小组讨论','图书馆 · 501 研讨间','#dfebe3'],['14:00','课程设计','实验楼 · 2 小时','#e7ddce']];
+      rows.forEach((row,i)=>{
+        const y=200+i*79+offset;
+        roundRect(x,y,cw,65,10,row[3]);
+        text(row[0],x+16,y+26,12,'#4c5751',500);
+        text(row[1],x+78,y+28,18,'#162b28',600);
+        text(row[2],x+78,y+48,10,'#5c6860',400);
+      });
+      // This thin unbroken rule crosses the lens and bends only inside it.
+      ctx.strokeStyle='#b56c49';ctx.lineWidth=1.1;ctx.beginPath();
+      ctx.moveTo(0,h*.52+offset*.6);ctx.lineTo(w,h*.52+offset*.6);ctx.stroke();
+    }
+  }
+  function updateHandle(){
+    const x=state.x*state.width-state.lensW/2,y=state.y*state.height-state.lensH/2;
+    Object.assign(handle.style,{left:x+'px',top:y+'px',width:state.lensW+'px',height:state.lensH+'px'});
+  }
+  function draw(){
+    if(!state.ready||stopped)return;
+    paintScene(); gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,source);
+    gl.uniform2f(uniforms.size,state.width,state.height);
+    gl.uniform2f(uniforms.center,state.x*state.width,state.y*state.height);
+    gl.uniform2f(uniforms.half,state.lensW/2,state.lensH/2);
+    gl.uniform2f(uniforms.light,state.lightX,state.lightY);
+    gl.uniform1f(uniforms.radius,40);
+    gl.uniform1f(uniforms.strength,state.strength);
+    gl.uniform1f(uniforms.refraction,state.refraction?1:0);
+    gl.uniform1f(uniforms.blur,state.blur);
+    gl.drawArrays(gl.TRIANGLES,0,6);updateHandle();
+  }
+  function limitLens(x,y){
+    const mx=(state.lensW/2+6)/state.width,my=(state.lensH/2+6)/state.height;
+    state.x=Math.max(mx,Math.min(1-mx,x));state.y=Math.max(my,Math.min(1-my,y));
+    state.lightX=-.55+(state.x-.53)*.8;state.lightY=-.83+(state.y-.50)*.65;
+  }
+  function resize(){
+    const rect=stage.getBoundingClientRect();state.width=stage.clientWidth;state.height=stage.clientHeight;
+    state.dpr=Math.min(devicePixelRatio||1,1.75);
+    canvas.width=source.width=Math.round(state.width*state.dpr);
+    canvas.height=source.height=Math.round(state.height*state.dpr);
+    state.lensW=Math.min(290,state.width-36);state.lensH=176;
+    gl.viewport(0,0,canvas.width,canvas.height);limitLens(state.x,state.y);draw();
+  }
+  function setAutoMotion(value){state.autoMotion=!!value;pause.textContent=value?'暂停背景':'播放背景';pause.setAttribute('aria-pressed',String(!value));last=performance.now();draw();}
+  function setRefraction(value){state.refraction=!!value;toggle.textContent='折射：'+(value?'开':'关');toggle.setAttribute('aria-pressed',String(!!value));draw();}
+  function setBlur(value){state.blur=Math.max(0,Math.min(2,Number(value)||0));softness.value=String(Math.round(state.blur*100));document.querySelector('#softness-value').textContent=state.blur.toFixed(2);draw();}
+  function setScene(value){if(value!=='schedule'&&value!=='grid')throw Error('unknown scene');state.scene=value;stage.dataset.scene=value;select.value=value;document.querySelector('#scene-label').textContent=value==='grid'?'线条与文字 · 折射对照':'日程背景 · 动态透射';draw();}
+  let drag=null;
+  handle.addEventListener('pointerdown',event=>{drag={id:event.pointerId,x:event.clientX,y:event.clientY,lx:state.x,ly:state.y};handle.setPointerCapture(event.pointerId);event.preventDefault();});
+  handle.addEventListener('pointermove',event=>{
+    if(!drag||drag.id!==event.pointerId)return;
+    limitLens(drag.lx+(event.clientX-drag.x)/state.width,drag.ly+(event.clientY-drag.y)/state.height);
+    draw();
+  });
+  function endDrag(){drag=null;}handle.addEventListener('pointerup',endDrag);handle.addEventListener('pointercancel',endDrag);handle.addEventListener('lostpointercapture',endDrag);
+  handle.addEventListener('keydown',event=>{const delta={ArrowLeft:[-12,0],ArrowRight:[12,0],ArrowUp:[0,-12],ArrowDown:[0,12]}[event.key];if(delta){event.preventDefault();limitLens(state.x+delta[0]/state.width,state.y+delta[1]/state.height);draw();}});
+  pause.addEventListener('click',()=>setAutoMotion(!state.autoMotion));toggle.addEventListener('click',()=>setRefraction(!state.refraction));
+  select.addEventListener('change',()=>setScene(select.value));
+  strength.addEventListener('input',()=>{state.strength=Number(strength.value)/100;document.querySelector('#strength-value').textContent=state.strength.toFixed(2);draw();});
+  softness.addEventListener('input',()=>setBlur(Number(softness.value)/100));
+  reduceMotion.addEventListener('change',()=>setAutoMotion(!reduceMotion.matches));
+  canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();fail('图形渲染已中断，请重新加载样例。');});
+  document.addEventListener('visibilitychange',()=>{last=performance.now();});
+  function frame(now){if(stopped)return;const elapsed=Math.min((now-last)/1000,.08);last=now;
+    if(state.autoMotion&&!document.hidden){state.time+=elapsed;draw();}raf=requestAnimationFrame(frame);}
+  new ResizeObserver(resize).observe(stage);resize();setAutoMotion(state.autoMotion);raf=requestAnimationFrame(frame);
+  // Deterministic controls are used by the capture harness, not by app business code.
+  window.glassDemo={setTime(seconds){state.time=Number(seconds);draw();},setAutoMotion,setRefraction,setScene,setBlur,
+    setLens(x,y){limitLens(Number(x),Number(y));draw();},
+    get stats(){return {webglReady:state.ready,time:state.time,autoMotion:state.autoMotion,refraction:state.refraction,scene:state.scene,blur:state.blur,
+      lens:{x:state.x,y:state.y,width:state.lensW,height:state.lensH},canvas:{width:canvas.width,height:canvas.height},css:{width:state.width,height:state.height}};}};
+})();
+</script>
+</html>

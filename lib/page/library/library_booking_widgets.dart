@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 
 /// A compact heading shared by the seat and seminar booking flows.
@@ -17,7 +18,7 @@ class LibraryStepHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = CupertinoTheme.of(context).primaryColor;
+    final primary = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(
@@ -53,13 +54,20 @@ class LibraryStepHeader extends StatelessWidget {
               Semantics(
                 label: '第 ${currentStep + 1} 步，共 ${steps.length} 步',
                 child: ExcludeSemantics(
-                  child: Text(
-                    '${currentStep + 1} / ${steps.length}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: CupertinoDynamicColor.resolve(
-                        CupertinoColors.secondaryLabel,
-                        context,
+                  child: DecoratedBox(
+                    decoration: GlassPalette.decoration(context, radius: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      child: Text(
+                        '${currentStep + 1} / ${steps.length}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: CupertinoDynamicColor.resolve(
+                            CupertinoColors.secondaryLabel,
+                            context,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -167,7 +175,7 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
 
   @override
   Widget build(BuildContext context) {
-    final primary = CupertinoTheme.of(context).primaryColor;
+    final primary = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -187,34 +195,38 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
                 onTap: widget.onChanged == null
                     ? null
                     : () => widget.onChanged!(floor.id),
-                child: CupertinoButton(
-                  key: ValueKey('library-floor-${floor.id}'),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  borderRadius: BorderRadius.circular(22),
-                  color: floor.id == widget.selectedId
-                      ? primary.withValues(alpha: 0.12)
-                      : CupertinoDynamicColor.resolve(
-                          CupertinoColors.tertiarySystemFill,
-                          context,
-                        ),
-                  onPressed: widget.onChanged == null
-                      ? null
-                      : () => widget.onChanged!(floor.id),
-                  child: Text(
-                    '${floor.label} · ${floor.availableCount ?? '—'}/${floor.count ?? '—'}'
-                    '${floor.pendingCount > 0 ? ' · ${floor.pendingCount}待确认' : ''}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: floor.id == widget.selectedId
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                      color: floor.id == widget.selectedId
-                          ? primary
-                          : CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
+                child: DecoratedBox(
+                  decoration: GlassPalette.decoration(
+                    context,
+                    radius: 22,
+                    selected: floor.id == widget.selectedId,
+                  ),
+                  child: CupertinoButton(
+                    key: ValueKey('library-floor-${floor.id}'),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    borderRadius: BorderRadius.circular(22),
+                    onPressed: widget.onChanged == null
+                        ? null
+                        : () => widget.onChanged!(floor.id),
+                    child: Text(
+                      '${floor.label} · ${floor.availableCount ?? '—'}/${floor.count ?? '—'}'
+                      '${floor.pendingCount > 0 ? ' · ${floor.pendingCount}待确认' : ''}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: floor.id == widget.selectedId
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: widget.onChanged == null
+                            ? CupertinoDynamicColor.resolve(
+                                CupertinoColors.secondaryLabel, context)
+                            : floor.id == widget.selectedId
+                                ? primary
+                                : CupertinoDynamicColor.resolve(
+                                    CupertinoColors.label,
+                                    context,
+                                  ),
+                      ),
                     ),
                   ),
                 ),

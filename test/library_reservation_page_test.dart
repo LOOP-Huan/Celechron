@@ -220,8 +220,11 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
 }
 
 Future<void> _openPage(WidgetTester tester, _FakeLibraryBookingClient client,
-    {double textScale = 1, Scholar? scholar}) async {
+    {double textScale = 1,
+    Scholar? scholar,
+    Brightness brightness = Brightness.light}) async {
   await tester.pumpWidget(CupertinoApp(
+    theme: CupertinoThemeData(brightness: brightness),
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(context)
           .copyWith(textScaler: TextScaler.linear(textScale)),
@@ -563,27 +566,29 @@ void main() {
         isNotNull);
   });
 
-  testWidgets('小屏放大文字时三步可操作且顶部预约切换保持可见', (tester) async {
-    tester.view.physicalSize = const Size(320, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final client = _FakeLibraryBookingClient();
-    await _openPage(tester, client, textScale: 1.5);
-    expect(tester.takeException(), isNull);
-    final tabs = find.byKey(const ValueKey('library-section-tabs'));
-    final position = tester.getTopLeft(tabs);
-    await _prepareDraft(tester);
-    expect(tester.takeException(), isNull);
-    expect(tester.getTopLeft(tabs), position);
-    expect(find.byKey(const ValueKey('library-submit')).hitTestable(),
-        findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('library-next')).hitTestable(),
-        findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+  for (final brightness in Brightness.values) {
+    testWidgets('小屏放大文字时三步可操作且顶部预约切换保持可见（${brightness.name}）', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final client = _FakeLibraryBookingClient();
+      await _openPage(tester, client, textScale: 1.5, brightness: brightness);
+      expect(tester.takeException(), isNull);
+      final tabs = find.byKey(const ValueKey('library-section-tabs'));
+      final position = tester.getTopLeft(tabs);
+      await _prepareDraft(tester);
+      expect(tester.takeException(), isNull);
+      expect(tester.getTopLeft(tabs), position);
+      expect(find.byKey(const ValueKey('library-submit')).hitTestable(),
+          findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('library-navigation-back')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('library-next')).hitTestable(),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('刷新后取消的固定主题不会覆盖新填写的自由主题', (tester) async {
     const choice = LibraryTitleChoice(id: 'old-topic', title: '旧固定主题');

@@ -1,6 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
+
+import 'liquid_glass.dart';
 
 class RoundRectangleCard extends StatefulWidget {
   final Widget child;
@@ -29,93 +29,48 @@ class RoundRectangleCard extends StatefulWidget {
   State<RoundRectangleCard> createState() => _RoundRectangleCardState();
 }
 
-class _RoundRectangleCardState extends State<RoundRectangleCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
+class _RoundRectangleCardState extends State<RoundRectangleCard> {
+  bool _pressed = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.animate) {
-      _animationController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 200),
-        reverseDuration: const Duration(milliseconds: 400),
-      );
-      _scaleAnimation = Tween<double>(begin: 1, end: 0.95).animate(
-        CurvedAnimation(
-          parent: _animationController,
-          curve: Curves.easeInOut,
-        ),
-      );
-    }
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) _pressed = false;
   }
 
   @override
-  void dispose() {
-    if (widget.animate) {
-      _animationController.dispose();
-    }
-    super.dispose();
+  void didUpdateWidget(covariant RoundRectangleCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.animate || widget.onTap == null) _pressed = false;
+  }
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
   }
 
   @override
   Widget build(BuildContext context) {
-    final brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
-    var isDown = false;
-    var isCancel = false;
-    var core = Container(
-        padding: widget.padding,
-        // decoration: BoxDecoration(
-        //     borderRadius: BorderRadius.circular(12),
-        //     // In light mode, color is white; in dark mode, color is black
-        //     color: SchedulerBinding
-        //                 .instance.platformDispatcher.platformBrightness ==
-        //             Brightness.dark
-        //         ? CupertinoDynamicColor.resolve(
-        //             CupertinoColors.secondarySystemBackground, context)
-        //         : CupertinoDynamicColor.resolve(CupertinoColors.white, context),
-        //     boxShadow: SchedulerBinding
-        //                 .instance.platformDispatcher.platformBrightness ==
-        //             Brightness.dark
-        //         ? null
-        //         : widget.boxShadow),
-        // 修改了颜色控制逻辑，应该跟随应用设置而非系统设置
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: brightness == Brightness.dark ? null : widget.boxShadow,
-          color: brightness == Brightness.dark
-              ? CupertinoDynamicColor.resolve(
-                  CupertinoColors.secondarySystemBackground, context)
-              : CupertinoDynamicColor.resolve(CupertinoColors.white, context),
-        ),
-        child: widget.child);
-    return widget.animate
-        ? GestureDetector(
-            onTapDown: (_) async {
-              isDown = true;
-              isCancel = false;
-              _animationController.forward();
-              await Future.delayed(const Duration(milliseconds: 125));
-              isDown = false;
-              if (isCancel) {
-                if (widget.onTap != null) {
-                  widget.onTap?.call();
-                }
-                _animationController.reverse();
-                isCancel = false;
-              }
-            },
-            onTapUp: (_) async {
-              isCancel = true;
-              if (!isDown) _animationController.reverse();
-            },
-            onTapCancel: () async => _animationController.reverse(),
-            child: ScaleTransition(scale: _scaleAnimation, child: core),
-          )
-        : GestureDetector(onTap: widget.onTap, child: core);
+    final animate = widget.animate &&
+        widget.onTap != null &&
+        !MediaQuery.disableAnimationsOf(context);
+    final core = GlassSurface(
+      padding: widget.padding,
+      child: widget.child,
+    );
+    if (widget.onTap == null) return core;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: animate ? (_) => _setPressed(true) : null,
+      onTapUp: animate ? (_) => _setPressed(false) : null,
+      onTapCancel: () => _setPressed(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: animate && _pressed ? 0.98 : 1,
+        duration: animate ? const Duration(milliseconds: 140) : Duration.zero,
+        curve: Curves.easeOutCubic,
+        child: core,
+      ),
+    );
   }
 }
 
@@ -137,33 +92,23 @@ class RoundRectangleCardWithForehead extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-            child: SizedBox(
-                child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: CupertinoDynamicColor.resolve(foreheadColor, context),
-            boxShadow: const [],
-          ),
-        ))),
-        SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              forehead,
-              RoundRectangleCard(
-                onTap: onTap,
-                animate: animate,
-                boxShadow: const [],
-                child: child,
-              ),
-            ],
-          ),
-        )
-      ],
+    return GlassSurface(
+      tint: CupertinoDynamicColor.resolve(foreheadColor, context),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            forehead,
+            RoundRectangleCard(
+              onTap: onTap,
+              animate: animate,
+              boxShadow: const [],
+              child: child,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

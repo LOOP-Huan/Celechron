@@ -1,6 +1,6 @@
-import 'dart:ui';
-
 import 'package:flutter/cupertino.dart';
+
+import 'liquid_glass.dart';
 
 class CelechronSliverTextHeader extends StatelessWidget {
   final String subtitle;
@@ -29,6 +29,8 @@ class CelechronSliverTextHeader extends StatelessWidget {
         right: right,
         bottom: bottom,
         padding: MediaQuery.of(context).padding.top,
+        toolbarHeight: (MediaQuery.textScalerOf(context).scale(fontSize) + 24)
+            .clamp(52, 88),
       ),
     );
   }
@@ -41,6 +43,7 @@ class CelechronHeader extends SliverPersistentHeaderDelegate {
   final double padding;
   final double fontSize;
   final bool firstPage;
+  final double toolbarHeight;
 
   CelechronHeader({
     required this.subtitle,
@@ -49,94 +52,71 @@ class CelechronHeader extends SliverPersistentHeaderDelegate {
     required this.padding,
     this.fontSize = 20,
     this.firstPage = false,
+    this.toolbarHeight = 52,
   });
 
   @override
   Widget build(
       BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-            sigmaX: shrinkOffset > 12 ? 10 : shrinkOffset / 1.2,
-            sigmaY: shrinkOffset > 12 ? 10 : shrinkOffset / 1.2),
-        child: Container(
-          padding: EdgeInsets.only(top: padding),
-          color: shrinkOffset > 12
-              ? CupertinoDynamicColor.resolve(
-                      CupertinoColors.systemBackground, context)
-                  .withValues(alpha: 0.5)
-              : CupertinoDynamicColor.resolve(
-                      CupertinoColors.systemBackground, context)
-                  .withValues(alpha: shrinkOffset / 24),
-          child: Column(
-            children: [
-              Stack(
-                children: [
-                  // Back button if not first page
-                  if (!firstPage)
-                    Container(
-                      alignment: Alignment.centerLeft,
-                      child: CupertinoButton(
-                        padding: const EdgeInsets.only(left: 2),
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                        child: Icon(
-                          CupertinoIcons.back,
-                          color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label, context),
-                        ),
+    return GlassSurface(
+      borderRadius: 0,
+      tint: CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
+      blur: overlapsContent || shrinkOffset > 0,
+      padding: EdgeInsets.only(top: padding),
+      child: Column(
+        children: [
+          SizedBox(
+            height: toolbarHeight,
+            child: NavigationToolbar(
+              centerMiddle: true,
+              middleSpacing: 8,
+              leading: firstPage
+                  ? null
+                  : CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: Icon(
+                        CupertinoIcons.back,
+                        semanticLabel: '返回',
+                        color: CupertinoDynamicColor.resolve(
+                            GlassPalette.accent, context),
                       ),
                     ),
-                  // Title at the center
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Hero(
-                          tag: subtitle,
-                          child: Column(
-                            children: [
-                              Text(
-                                subtitle,
-                                style: CupertinoTheme.of(context)
-                                    .textTheme
-                                    .navTitleTextStyle
-                                    .copyWith(
-                                      fontSize:
-                                          fontSize - (bottom == null ? 0 : 2),
-                                    ),
-                              ),
-                              if (bottom != null) bottom!,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Right button
-                  if (right != null)
-                    Container(alignment: Alignment.centerRight, child: right),
-                ],
+              middle: Hero(
+                tag: subtitle,
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: CupertinoTheme.of(context)
+                      .textTheme
+                      .navTitleTextStyle
+                      .copyWith(fontSize: fontSize - (bottom == null ? 0 : 2)),
+                ),
               ),
-            ],
+              trailing: right,
+            ),
           ),
-        ),
+          if (bottom != null)
+            SizedBox(height: 48, child: Center(child: bottom)),
+        ],
       ),
     );
   }
 
   @override
-  double get minExtent => 48 + padding + (bottom == null ? 0 : 48);
+  double get minExtent => toolbarHeight + padding + (bottom == null ? 0 : 48);
 
   @override
-  double get maxExtent => 48 + padding + (bottom == null ? 0 : 48);
+  double get maxExtent => minExtent;
 
   @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
-    return true;
-  }
+  bool shouldRebuild(covariant CelechronHeader oldDelegate) =>
+      oldDelegate.subtitle != subtitle ||
+      oldDelegate.bottom != bottom ||
+      oldDelegate.right != right ||
+      oldDelegate.padding != padding ||
+      oldDelegate.fontSize != fontSize ||
+      oldDelegate.firstPage != firstPage ||
+      oldDelegate.toolbarHeight != toolbarHeight;
 }

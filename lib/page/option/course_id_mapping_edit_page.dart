@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'package:get/get.dart';
@@ -19,14 +20,9 @@ class CourseIdMappingEditForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var brightness = CupertinoTheme.of(context).brightness ??
-        MediaQuery.of(context).platformBrightness;
-
-    return Container(
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: CupertinoDynamicColor.resolve(
-                CupertinoColors.systemGroupedBackground, context)),
+    return GlassSurface(
+        blur: true,
+        borderRadius: 28,
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
           left: 6,
@@ -61,11 +57,10 @@ class CourseIdMappingEditForm extends StatelessWidget {
                                       .textTheme
                                       .textStyle)),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: brightness == Brightness.light
-                                ? CupertinoColors.systemBackground
-                                : CupertinoColors.secondarySystemBackground,
-                            borderRadius: BorderRadius.circular(10),
+                          decoration: GlassPalette.decoration(
+                            context,
+                            radius: 16,
+                            tint: GlassPalette.fieldColor(context),
                           ),
                         )),
                     const SizedBox(height: 16),
@@ -81,11 +76,10 @@ class CourseIdMappingEditForm extends StatelessWidget {
                                     .textStyle),
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: brightness == Brightness.light
-                                ? CupertinoColors.systemBackground
-                                : CupertinoColors.secondarySystemBackground,
-                            borderRadius: BorderRadius.circular(10),
+                          decoration: GlassPalette.decoration(
+                            context,
+                            radius: 16,
+                            tint: GlassPalette.fieldColor(context),
                           ),
                         )),
                     const SizedBox(height: 16),
@@ -101,11 +95,10 @@ class CourseIdMappingEditForm extends StatelessWidget {
                                     .textStyle),
                           ),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: brightness == Brightness.light
-                                ? CupertinoColors.systemBackground
-                                : CupertinoColors.secondarySystemBackground,
-                            borderRadius: BorderRadius.circular(10),
+                          decoration: GlassPalette.decoration(
+                            context,
+                            radius: 16,
+                            tint: GlassPalette.fieldColor(context),
                           ),
                         )),
                     const SizedBox(height: 16),
@@ -146,14 +139,16 @@ class CourseIdMappingEditForm extends StatelessWidget {
                             scholar.refresh();
                           }
                         },
-                        color: CupertinoColors.activeBlue,
-                        child: const SizedBox(
+                        color: GlassPalette.accent,
+                        child: SizedBox(
                           height: 24,
                           width: 60,
                           child: Center(
                               child: Text('保存',
-                                  style:
-                                      TextStyle(color: CupertinoColors.white))),
+                                  style: TextStyle(
+                                      color: GlassPalette.isDark(context)
+                                          ? const Color(0xFF0B1220)
+                                          : CupertinoColors.white))),
                         )),
                   ],
                 ),
@@ -173,20 +168,19 @@ class CourseIdMappingEditPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoColors.systemGroupedBackground,
+    return GlassPageScaffold(
+      backgroundColor: GlassPalette.background,
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
             const CelechronSliverTextHeader(subtitle: '自定义课程代码映射'),
             Obx(() => SliverList(
                   delegate: SliverChildBuilderDelegate(
-                      (context, index) => Container(
-                            padding: index == 0
-                                ? const EdgeInsets.only(
-                                    top: 0, bottom: 5, left: 16, right: 16)
-                                : const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 5),
+                      (context, index) => GlassSurface(
+                            margin: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 5),
+                            borderRadius: 20,
+                            padding: const EdgeInsets.symmetric(vertical: 5),
                             child: CupertinoFormRow(
                               prefix: Text(
                                   '${courseIdMappingList[index].comment}： ${courseIdMappingList[index].id1} <-> ${courseIdMappingList[index].id2}',

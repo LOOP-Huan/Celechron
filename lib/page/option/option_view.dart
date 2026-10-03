@@ -1,3 +1,5 @@
+import 'package:celechron/design/glass_list_section.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/utils/platform_features.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -49,19 +51,19 @@ class OptionPage extends StatelessWidget {
             color:
                 CupertinoDynamicColor.resolve(_kHeaderFooterColor, context)));
 
-    return CupertinoPageScaffold(
-        backgroundColor: CupertinoColors.systemGroupedBackground,
+    return GlassPageScaffold(
+        backgroundColor: GlassPalette.background,
         child: SafeArea(
             child: CustomScrollView(
           slivers: [
             const CupertinoSliverNavigationBar(
               largeTitle: Text('设置'),
-              backgroundColor: CupertinoColors.systemGroupedBackground,
+              backgroundColor: GlassPalette.barColor,
               border: null,
             ),
             // 教务
             Obx(() => SliverToBoxAdapter(
-                  child: CupertinoListSection.insetGrouped(
+                  child: GlassListSection(
                     margin: _defaultMargin,
                     additionalDividerMargin: 2,
                     header: Container(
@@ -206,7 +208,7 @@ class OptionPage extends StatelessWidget {
                 )),
             // 时间规划
             SliverToBoxAdapter(
-                child: CupertinoListSection.insetGrouped(
+                child: GlassListSection(
                     additionalDividerMargin: 2,
                     margin: _defaultMargin,
                     header: Container(
@@ -329,7 +331,7 @@ class OptionPage extends StatelessWidget {
                 ])),
             // 日程
             Obx(() => SliverToBoxAdapter(
-                    child: CupertinoListSection.insetGrouped(
+                    child: GlassListSection(
                         additionalDividerMargin: 2,
                         margin: _defaultMargin,
                         header: Container(
@@ -380,7 +382,7 @@ class OptionPage extends StatelessWidget {
                     ]))),
             // 工具
             SliverToBoxAdapter(
-                child: CupertinoListSection.insetGrouped(
+                child: GlassListSection(
                     additionalDividerMargin: 2,
                     margin: _defaultMargin,
                     header: Container(
@@ -413,7 +415,7 @@ class OptionPage extends StatelessWidget {
                 ])),
             // 关于
             SliverToBoxAdapter(
-              child: CupertinoListSection.insetGrouped(
+              child: GlassListSection(
                 additionalDividerMargin: 2,
                 margin: _defaultMargin,
                 header: Container(
@@ -440,7 +442,7 @@ class OptionPage extends StatelessWidget {
             ),
             // 关于
             SliverToBoxAdapter(
-              child: CupertinoListSection.insetGrouped(
+              child: GlassListSection(
                   additionalDividerMargin: 2,
                   margin: _defaultMargin,
                   header: Container(

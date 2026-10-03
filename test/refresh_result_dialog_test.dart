@@ -1,9 +1,44 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
 
+import 'package:celechron/model/option.dart';
+import 'package:celechron/model/scholar.dart';
+import 'package:celechron/page/scholar/scholar_controller.dart';
 import 'package:celechron/page/scholar/scholar_view.dart';
 
 void main() {
+  testWidgets('构造学业页不改写全局错误页面构造器', (tester) async {
+    final originalBuilder = ErrorWidget.builder;
+    Get.put<Rx<Scholar>>(Scholar().obs, tag: 'scholar');
+    Get.put<Option>(
+      Option(
+        workTime: const Duration(minutes: 45).obs,
+        restTime: const Duration(minutes: 15).obs,
+        allowTime: <DateTime, DateTime>{}.obs,
+        gpaStrategy: GpaStrategy.best.obs,
+        pushOnGradeChange: false.obs,
+        pushOnDdlReminder: false.obs,
+        brightnessMode: BrightnessMode.system.obs,
+        courseIdMappingList: <CourseIdMap>[].obs,
+        hideHomeGpa: false.obs,
+        asyncRefresh: false.obs,
+      ),
+      tag: 'option',
+    );
+    try {
+      ScholarPage();
+      expect(ErrorWidget.builder, same(originalBuilder));
+      await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    } finally {
+      ErrorWidget.builder = originalBuilder;
+      if (Get.isRegistered<ScholarController>()) {
+        Get.find<ScholarController>().onClose();
+      }
+      Get.reset();
+    }
+  });
+
   Widget testApp(List<String?> results) {
     return CupertinoApp(
       home: Builder(

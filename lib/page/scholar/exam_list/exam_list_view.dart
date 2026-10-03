@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:extended_sliver/extended_sliver.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -268,24 +269,26 @@ class _ExamListPageState extends State<ExamListPage> {
 
   Widget _semesterPicker(BuildContext context) {
     return RoundRectangleCardWithForehead(
-        forehead: const Row(children: [
+        forehead: Row(children: [
           // alert icon
           Padding(
-            padding: EdgeInsets.only(left: 12, top: 4, bottom: 4),
+            padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
             child: Icon(
               CupertinoIcons.exclamationmark_circle_fill,
-              color: CupertinoColors.white,
+              color: CupertinoDynamicColor.resolve(
+                  CupertinoColors.systemRed, context),
               size: 14,
             ),
           ),
           Padding(
-              padding: EdgeInsets.only(left: 4, top: 4, bottom: 4),
+              padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4),
               child: Text('请务必前往教务网核对',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     overflow: TextOverflow.ellipsis,
-                    color: CupertinoColors.white,
+                    color: CupertinoDynamicColor.resolve(
+                        CupertinoColors.label, context),
                   )))
         ]),
         foreheadColor: CupertinoColors.systemRed,
@@ -307,6 +310,9 @@ class _ExamListPageState extends State<ExamListPage> {
                                 _examListController.semesterIndex.value = index;
                                 _examListController.semesterIndex.refresh();
                               },
+                              selected:
+                                  _examListController.semesterIndex.value ==
+                                      index,
                               backgroundColor:
                                   _examListController.semesterIndex.value ==
                                           index
@@ -324,9 +330,7 @@ class _ExamListPageState extends State<ExamListPage> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoDynamicColor.resolve(
-          CupertinoColors.systemGroupedBackground, context),
+    return GlassPageScaffold(
       child: CustomScrollView(
         slivers: [
           const CelechronSliverTextHeader(

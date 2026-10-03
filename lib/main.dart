@@ -20,6 +20,8 @@ import 'package:celechron/services/refresh_coordinator.dart';
 import 'package:celechron/worker/ecard_widget_messenger.dart';
 import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/utils/global.dart';
+import 'package:celechron/design/liquid_glass.dart';
+import 'package:celechron/design/refractive_glass.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +44,7 @@ void main() async {
   Get.put(db.getOption(), tag: 'option');
   Get.put(db.getFuse().obs, tag: 'fuse');
 
+  await RefractiveGlass.preload();
   runApp(const CelechronApp());
 
   var scholar = Get.find<Rx<Scholar>>(tag: 'scholar');
@@ -151,8 +154,10 @@ class _CelechronAppState extends State<CelechronApp>
                 : brightnessMode.value == BrightnessMode.dark
                     ? Brightness.dark
                     : Brightness.light,
-            scaffoldBackgroundColor: CupertinoColors.systemBackground,
-            barBackgroundColor: CupertinoColors.systemBackground,
+            primaryColor: GlassPalette.accent,
+            primaryContrastingColor: GlassPalette.onAccent,
+            scaffoldBackgroundColor: GlassPalette.background,
+            barBackgroundColor: GlassPalette.barColor,
           ),
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,

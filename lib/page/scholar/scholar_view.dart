@@ -1,3 +1,5 @@
+import 'package:celechron/design/glass_list_section.dart';
+import 'package:celechron/design/liquid_glass.dart';
 // Official packages
 import 'package:celechron/page/scholar/todo/todo_card.dart';
 import 'package:celechron/http/zjuServices/exceptions.dart';
@@ -104,7 +106,7 @@ class ScholarErrorHandler extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverList(
       delegate: SliverChildListDelegate([
-        CupertinoListSection.insetGrouped(
+        GlassListSection(
           header: Container(
             padding: const EdgeInsets.only(left: 16, right: 16),
             child: Text(
@@ -134,11 +136,7 @@ class ScholarErrorHandler extends StatelessWidget {
 }
 
 class ScholarPage extends StatelessWidget {
-  ScholarPage({super.key}) {
-    ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
-      return ScholarErrorHandler(errorDetails: errorDetails);
-    };
-  }
+  ScholarPage({super.key});
 
   final _scholarController = Get.put(ScholarController());
   final ValueNotifier<bool> _isRefreshing = ValueNotifier(false);
@@ -747,28 +745,13 @@ class ScholarPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-        /*backgroundColor: CupertinoDynamicColor.resolve(
-            CupertinoColors.systemGroupedBackground, context),*/
+    return GlassPageScaffold(
         child: CustomScrollView(
       slivers: [
         SliverPinnedToBoxAdapter(
-            child: Container(
-          decoration: BoxDecoration(
-            color: CupertinoDynamicColor.resolve(
-                CupertinoColors.systemBackground, context),
-            /*boxShadow: [
-              BoxShadow(
-                color: CupertinoDynamicColor.resolve(
-                    CupertinoColors.systemGrey5, context),
-                offset: const Offset(0, 0),
-                blurRadius: 4,
-              ),
-            ],
-            borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16)),*/
-          ),
+            child: GlassSurface(
+          blur: true,
+          borderRadius: 0,
           child: Padding(
               padding: EdgeInsets.only(
                   left: 16,
@@ -789,6 +772,7 @@ class ScholarPage extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: CupertinoSearchTextField(
+                        backgroundColor: GlassPalette.fieldColor(context),
                         placeholder: '搜索课程、事项...',
                         placeholderStyle: CupertinoTheme.of(context)
                             .textTheme
@@ -882,6 +866,9 @@ class ScholarPage extends StatelessWidget {
                                           _scholarController.semesterIndex
                                               .refresh();
                                         },
+                                        selected: _scholarController
+                                                .semesterIndex.value ==
+                                            index,
                                         backgroundColor: _scholarController
                                                     .semesterIndex.value ==
                                                 index

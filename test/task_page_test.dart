@@ -208,6 +208,32 @@ void main() {
     });
   });
 
+  testWidgets('固定日程正常渲染且仅允许左滑删除', (tester) async {
+    await runTaskPageTest(tester, () async {
+      final task = _testTask(summary: '晚间阅读')..type = TaskType.fixed;
+      taskList.add(task);
+      await pumpTaskPage(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('晚间阅读'), findsOneWidget);
+
+      await tester.drag(find.text('晚间阅读'), const Offset(600, 0));
+      await pumpFor(tester, const Duration(milliseconds: 700));
+
+      expect(find.text('晚间阅读'), findsOneWidget);
+      expect(_aliveTasks(taskList), contains(task));
+      expect(task.status, TaskStatus.running);
+
+      await tester.drag(find.text('晚间阅读'), const Offset(-600, 0));
+      await pumpFor(tester, const Duration(milliseconds: 700));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('晚间阅读'), findsNothing);
+      expect(_aliveTasks(taskList), isEmpty);
+      expect(find.text('没有任务'), findsOneWidget);
+    });
+  });
+
   testWidgets('对照组：编辑页点“删除任务”确实会返回 status=deleted 的任务', (tester) async {
     await runTaskPageTest(tester, () async {
       final task = _testTask(summary: '删除功能');

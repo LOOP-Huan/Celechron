@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:celechron/design/liquid_glass.dart';
+
 import 'package:celechron/page/scholar/scholar_view.dart';
 import 'package:celechron/page/flow/flow_view.dart';
 import 'package:celechron/page/task/task_view.dart';
@@ -22,16 +24,13 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _indexNum = 0;
-  final PageController _pageController = PageController();
-
   // 只构建一次，保持各页 widget 身份稳定，切页时不会重跑各页构造器里的 Get.put
   late final List<Widget> _pages = [
-    _KeepAlivePage(child: FlowPage()),
-    _KeepAlivePage(child: CalendarPage()),
-    _KeepAlivePage(child: TaskPage()),
-    _KeepAlivePage(child: ScholarPage()),
-    _KeepAlivePage(child: OptionPage()),
+    FlowPage(),
+    CalendarPage(),
+    TaskPage(),
+    ScholarPage(),
+    OptionPage(),
   ];
 
   @override
@@ -41,114 +40,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tabBar = CupertinoTabBar(
-      iconSize: 26,
-      backgroundColor: CupertinoDynamicColor.resolve(
-              CupertinoColors.secondarySystemBackground, context)
-          .withValues(alpha: 0.5),
-      items: const <BottomNavigationBarItem>[
-        BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.time),
-          label: '接下来',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.calendar),
-          label: '日程',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.check_mark),
-          label: '任务',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.school_rounded),
-          label: '学业',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(CupertinoIcons.settings),
-          label: '设置',
-        ),
-      ],
-      currentIndex: _indexNum,
-      // 点按瞬时切换（iOS 原生习惯）。jumpToPage 会同步触发 onPageChanged，
-      // _indexNum 只在 onPageChanged 里更新，这里不再 setState
-      onTap: (int index) => _pageController.jumpToPage(index),
-    );
-
-    final ScrollBehavior scrollBehavior = ScrollConfiguration.of(context);
-    // HeroMode 关闭：原先嵌套 CupertinoTabView 导航器会屏蔽标签页内的 Hero
-    // 飞行动画（如学业页成绩卡片），这里显式关闭以保持原有行为
-    Widget content = HeroMode(
-      enabled: false,
-      child: PageView(
-        controller: _pageController,
-        onPageChanged: (index) {
-          if (index != _indexNum) {
-            setState(() {
-              _indexNum = index;
-            });
-          }
-        },
-        // 允许鼠标拖动切页（与原 GestureDetector 行为一致），只作用于本 PageView，
-        // 不影响页面内部列表；scrollbars 必须关掉，否则桌面端会叠一条横向滚动条
-        scrollBehavior: scrollBehavior.copyWith(
-          scrollbars: false,
-          dragDevices: {
-            ...scrollBehavior.dragDevices,
-            PointerDeviceKind.mouse,
-          },
-        ),
-        children: _pages,
-      ),
-    );
-
-    // 以下复刻 CupertinoTabScaffold（resizeToAvoidBottomInset: true）的布局逻辑：
-    // 键盘高度转为内容 Padding 并从子 MediaQuery 移除；本应用标签栏为半透明
-    // （alpha 0.5），栏高只注入 MediaQuery.padding，内容延伸到栏后方由各页
-    // SafeArea 自行避让
-    final MediaQueryData existingMediaQuery = MediaQuery.of(context);
-    MediaQueryData newMediaQuery =
-        existingMediaQuery.removeViewInsets(removeBottom: true);
-    final EdgeInsets contentPadding =
-        EdgeInsets.only(bottom: existingMediaQuery.viewInsets.bottom);
-
-    // 键盘完全盖住标签栏时不再为栏高留白
-    if (tabBar.preferredSize.height > existingMediaQuery.viewInsets.bottom) {
-      final double bottomPadding =
-          tabBar.preferredSize.height + existingMediaQuery.padding.bottom;
-      newMediaQuery = newMediaQuery.copyWith(
-        padding: newMediaQuery.padding.copyWith(bottom: bottomPadding),
-      );
-    }
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: CupertinoTheme.of(context).scaffoldBackgroundColor,
-      ),
-      child: Stack(
-        children: [
-          // 内容在下层，半透明标签栏的 BackdropFilter 才有内容可模糊
-          MediaQuery(
-            data: newMediaQuery,
-            child: Padding(padding: contentPadding, child: content),
-          ),
-          // 标签栏放在修改后的 MediaQuery 之外，读原始 viewPadding 计算安全区
-          MediaQuery.withNoTextScaling(
-            child: Align(alignment: Alignment.bottomCenter, child: tabBar),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => GlassHomeTabs(pages: _pages);
 
   Future<void> initFuse() async {
     await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
     var fuse = Get.find<Rx<Fuse>>(tag: 'fuse');
     var response =
         await fuse.value.checkUpdate().whenComplete(() => fuse.refresh());
@@ -180,6 +76,177 @@ class _HomePageState extends State<HomePage> {
             );
           });
     }
+  }
+}
+
+/// Five persistent app pages with an inset navigation dock.
+///
+/// The dock occupies bottom safe-area space, while the scrollable pages remain
+/// underneath it so the single glass blur can sample their backgrounds.
+class GlassHomeTabs extends StatefulWidget {
+  const GlassHomeTabs({super.key, required this.pages});
+
+  final List<Widget> pages;
+
+  @override
+  State<GlassHomeTabs> createState() => _GlassHomeTabsState();
+}
+
+class _GlassHomeTabsState extends State<GlassHomeTabs> {
+  static const _dockHeight = 68.0;
+  static const _dockGap = 12.0;
+  static const _tabs = [
+    (icon: CupertinoIcons.time, label: '接下来'),
+    (icon: CupertinoIcons.calendar, label: '日程'),
+    (icon: CupertinoIcons.check_mark, label: '任务'),
+    (icon: Icons.school_rounded, label: '学业'),
+    (icon: CupertinoIcons.settings, label: '设置'),
+  ];
+
+  int _indexNum = 0;
+  final PageController _pageController = PageController();
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _selectTab(int index) {
+    if (index != _indexNum) _pageController.jumpToPage(index);
+  }
+
+  Widget _dock(BuildContext context) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final accent = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
+    final inactive =
+        CupertinoDynamicColor.resolve(CupertinoColors.secondaryLabel, context);
+    return GlassSurface(
+      key: const ValueKey('home-glass-dock'),
+      borderRadius: 34,
+      padding: const EdgeInsets.all(6),
+      tint: CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
+      blur: true,
+      emphasized: true,
+      child: SizedBox(
+        height: _dockHeight - 12,
+        child: Row(
+          children: [
+            for (var index = 0; index < _tabs.length; index++)
+              Expanded(
+                child: Semantics(
+                  key: ValueKey('home-tab-semantics-$index'),
+                  label: _tabs[index].label,
+                  selected: index == _indexNum,
+                  button: true,
+                  excludeSemantics: true,
+                  onTap: () => _selectTab(index),
+                  child: CupertinoButton(
+                    key: ValueKey('home-tab-$index'),
+                    padding: EdgeInsets.zero,
+                    onPressed: () => _selectTab(index),
+                    child: AnimatedContainer(
+                      duration: reducedMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      decoration: index == _indexNum
+                          ? GlassPalette.decoration(context,
+                              radius: 28, selected: true)
+                          : BoxDecoration(
+                              borderRadius: BorderRadius.circular(28)),
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(_tabs[index].icon,
+                              size: 24,
+                              color: index == _indexNum ? accent : inactive),
+                          const SizedBox(height: 3),
+                          Text(_tabs[index].label,
+                              maxLines: 1,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  height: 1.15,
+                                  fontWeight: index == _indexNum
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color:
+                                      index == _indexNum ? accent : inactive)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    assert(widget.pages.length == _tabs.length);
+    final media = MediaQuery.of(context);
+    final keyboardVisible = media.viewInsets.bottom > 0;
+    final dockBottom = media.padding.bottom + _dockGap;
+    final contentMedia = media.removeViewInsets(removeBottom: true).copyWith(
+          padding: media.padding.copyWith(
+            bottom: keyboardVisible ? 0 : _dockHeight + dockBottom + _dockGap,
+          ),
+        );
+    final scrollBehavior = ScrollConfiguration.of(context);
+    return GlassBackdrop(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          MediaQuery(
+            data: contentMedia,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+              child: HeroMode(
+                enabled: false,
+                child: PageView(
+                  key: const ValueKey('home-pages'),
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    if (index != _indexNum) {
+                      setState(() => _indexNum = index);
+                    }
+                  },
+                  scrollBehavior: scrollBehavior.copyWith(
+                    scrollbars: false,
+                    dragDevices: {
+                      ...scrollBehavior.dragDevices,
+                      PointerDeviceKind.mouse,
+                    },
+                  ),
+                  children: [
+                    for (final page in widget.pages)
+                      _KeepAlivePage(child: page),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (!keyboardVisible)
+            Positioned(
+              left: media.padding.left + 16,
+              right: media.padding.right + 16,
+              bottom: dockBottom,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  // Match native tab bars: keep labels compact while exposing
+                  // each complete label and selected state to accessibility.
+                  child: MediaQuery.withNoTextScaling(child: _dock(context)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

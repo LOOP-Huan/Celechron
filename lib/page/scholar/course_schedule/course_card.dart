@@ -1,3 +1,4 @@
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/page/scholar/course_detail/course_detail_view.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -153,10 +154,18 @@ class _SessionCardState extends State<SessionCard>
           ),
           child: Container(
             alignment: Alignment.topCenter,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              color: CupertinoDynamicColor.resolve(
+            decoration: GlassPalette.decoration(
+              context,
+              radius: 8,
+              tint: CupertinoDynamicColor.resolve(
                   widget.backgroundColor, context),
+            ).copyWith(
+              border: Border.all(
+                color: CupertinoDynamicColor.resolve(
+                    widget.backgroundColor, context),
+                width: MediaQuery.highContrastOf(context) ? 1.5 : 1.0,
+              ),
+              boxShadow: const [],
             ),
             child: ClipRect(
               child: Padding(
@@ -183,7 +192,8 @@ class _SessionCardState extends State<SessionCard>
                             .copyWith(
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
-                              color: const Color.fromRGBO(255, 255, 255, 1.0),
+                              color: CupertinoDynamicColor.resolve(
+                                  CupertinoColors.label, context),
                             ),
                       ),
                     ),
@@ -202,7 +212,8 @@ class _SessionCardState extends State<SessionCard>
                               .textStyle
                               .copyWith(
                                 fontSize: 9,
-                                color: const Color.fromRGBO(255, 255, 255, 0.9),
+                                color: CupertinoDynamicColor.resolve(
+                                    CupertinoColors.secondaryLabel, context),
                               ),
                         ),
                       ),

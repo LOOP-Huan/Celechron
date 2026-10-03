@@ -1,3 +1,5 @@
+import 'package:celechron/design/glass_list_section.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/persistent_headers.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -75,7 +77,9 @@ class _DateTimePairEditDialogState extends State<DateTimePairEditDialog> {
                         await showCupertinoModalPopup(
                             context: context,
                             builder: (BuildContext context) {
-                              return CupertinoPageScaffold(
+                              return GlassSurface(
+                                blur: true,
+                                borderRadius: 28,
                                 child: SizedBox(
                                   height: MediaQuery.of(context)
                                           .copyWith()
@@ -118,7 +122,9 @@ class _DateTimePairEditDialogState extends State<DateTimePairEditDialog> {
                         await showCupertinoModalPopup(
                             context: context,
                             builder: (BuildContext context) {
-                              return CupertinoPageScaffold(
+                              return GlassSurface(
+                                blur: true,
+                                borderRadius: 28,
                                 child: SizedBox(
                                   height: MediaQuery.of(context)
                                           .copyWith()
@@ -271,15 +277,15 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
 
     now.removeWhere((element) => element.isDeleted);
 
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoColors.systemGroupedBackground,
+    return GlassPageScaffold(
+      backgroundColor: GlassPalette.background,
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
             const CelechronSliverTextHeader(subtitle: '编辑可用工作时段'),
             SliverList(
               delegate: SliverChildListDelegate([
-                CupertinoListSection.insetGrouped(
+                GlassListSection(
                   header: Container(
                     padding: const EdgeInsets.only(left: 16),
                     child: Text(

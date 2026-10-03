@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/persistent_headers.dart';
 import 'package:celechron/http/github_service.dart';
 
@@ -112,140 +113,156 @@ class _CreditsPageState extends State<CreditsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    return GlassPageScaffold(
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
             const CelechronSliverTextHeader(subtitle: '关于'),
             SliverToBoxAdapter(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    height: 64,
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        "assets/logo.png",
-                        height: 108,
+              child: GlassSurface(
+                margin: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                emphasized: true,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          "assets/logo.png",
+                          height: 88,
+                        ),
+                        const SizedBox(
+                          width: 8,
+                        ),
+                        Column(
+                          children: [
+                            const Text(
+                              'Celechron',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.8,
+                              ),
+                            ),
+                            Text(
+                              '${widget.version} 版本',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: CupertinoDynamicColor.resolve(
+                                    CupertinoColors.secondaryLabel, context),
+                              ),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: GlassSurface(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    const Text(
+                      '制作人员',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
                       ),
-                      const SizedBox(
-                        width: 8,
+                    ),
+                    const SizedBox(
+                      height: 24,
+                    ),
+                    const Text(
+                      '🎨设计',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      Column(
-                        children: [
-                          const Text(
-                            'Celechron',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 32,
+                    ),
+                    const SizedBox(
+                      height: 16,
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 32),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.max,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        verticalDirection: VerticalDirection.down,
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              'nosig',
+                              textAlign: TextAlign.center,
                             ),
                           ),
-                          Text(
-                            '${widget.version} 版本',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 12,
+                          Expanded(
+                            child: Text(
+                              '空之探险队的 Kate',
+                              textAlign: TextAlign.center,
                             ),
                           ),
                         ],
-                      )
-                    ],
-                  ),
-                  const SizedBox(
-                    height: 24,
-                  ),
-                  const Text(
-                    '制作人员',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
+                      ),
                     ),
-                  ),
-                  const SizedBox(
-                    height: 24,
-                  ),
-                  const Text(
-                    '🎨设计',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(
+                      height: 24,
                     ),
-                  ),
-                  const SizedBox(
-                    height: 16,
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 32),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      mainAxisSize: MainAxisSize.max,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      verticalDirection: VerticalDirection.down,
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            'nosig',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            '空之探险队的 Kate',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      '🧑‍💻开发',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(
-                    height: 24,
-                  ),
-                  const Text(
-                    '🧑‍💻开发',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(
+                      height: 16,
                     ),
-                  ),
-                  const SizedBox(
-                    height: 16,
-                  ),
-                  _buildContributorsList(),
-                ],
+                    _buildContributorsList(),
+                  ],
+                ),
               ),
             ),
             SliverFillRemaining(
               hasScrollBody: false,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    '本程序采用 GPLv3 协议开源',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      '本程序采用 GPLv3 协议开源',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: CupertinoDynamicColor.resolve(
+                              CupertinoColors.secondaryLabel, context)),
+                    ),
+                    const SizedBox(
+                      height: 4,
+                    ),
+                    Text(
+                      '浙ICP备2024061973号-2A',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
                         fontSize: 12,
                         color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel, context)),
-                  ),
-                  const SizedBox(
-                    height: 4,
-                  ),
-                  Text(
-                    '浙ICP备2024061973号-2A',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoDynamicColor.resolve(
-                          CupertinoColors.secondaryLabel, context),
+                            CupertinoColors.secondaryLabel, context),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

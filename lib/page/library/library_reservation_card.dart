@@ -1,4 +1,4 @@
-import 'package:celechron/design/round_rectangle_card.dart';
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -12,9 +12,7 @@ class LibraryReservationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RoundRectangleCard(
-      animate: false,
-      padding: EdgeInsets.zero,
+    return GlassSurface(
       child: CupertinoButton(
         key: const ValueKey('library-reservation-card'),
         padding: const EdgeInsets.all(16),
@@ -52,7 +50,17 @@ class LibraryReservationCard extends StatelessWidget {
         },
         child: Row(
           children: [
-            const Icon(CupertinoIcons.book, size: 28),
+            DecoratedBox(
+              decoration:
+                  GlassPalette.decoration(context, radius: 16, selected: true),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Icon(CupertinoIcons.book,
+                    size: 26,
+                    color: CupertinoDynamicColor.resolve(
+                        GlassPalette.accent, context)),
+              ),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -66,10 +74,11 @@ class LibraryReservationCard extends StatelessWidget {
                         .copyWith(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     '座位与研讨间',
                     style: TextStyle(
-                      color: CupertinoColors.secondaryLabel,
+                      color: CupertinoDynamicColor.resolve(
+                          CupertinoColors.secondaryLabel, context),
                       fontSize: 13,
                     ),
                   ),
