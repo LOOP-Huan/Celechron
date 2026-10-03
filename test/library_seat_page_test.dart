@@ -44,6 +44,8 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
   bool emptySeats = false;
   int generatedSeatCount = 0;
   List<LibrarySeatArea>? areas;
+  List<LibrarySeat>? seats;
+  Completer<List<LibrarySeatArea>>? pendingAreas;
   List<LibraryBuilding>? buildings;
   String rules = '';
   String? segmentUnavailableReason;
@@ -78,7 +80,8 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     required String date,
   }) async {
     areaCalls++;
-    return (areas ?? const [_secondFloor, _thirdFloor])
+    final values = pendingAreas == null ? areas : await pendingAreas!.future;
+    return (values ?? const [_secondFloor, _thirdFloor])
         .where((area) => area.buildingId == buildingId)
         .toList();
   }
@@ -117,6 +120,7 @@ class _FakeSeatClient implements LibrarySeatBookingClient {
     seatQueries.add((areaId: area.id, date: segment.date));
     final error = seatError;
     if (error != null) throw error;
+    if (seats != null) return seats!;
     if (generatedSeatCount > 0) {
       return List.generate(
           generatedSeatCount,
@@ -260,7 +264,203 @@ Future<void> _pumpDialog(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
+LibrarySeatArea _countedArea(
+  String id, {
+  String floorName = '二层',
+  String floorId = 'floor-2',
+  String type = '1',
+  bool canReserve = true,
+  String? unsupportedReason,
+  int? free,
+  int? total,
+  int? floorFree,
+  int? floorTotal,
+}) =>
+    LibrarySeatArea(
+      id: id,
+      name: '阅览区 $id',
+      buildingId: 'library-1',
+      floorName: floorName,
+      floorId: floorId,
+      typeCategory: type,
+      canReserve: canReserve,
+      unsupportedReason: unsupportedReason,
+      freeSeats: free,
+      totalSeats: total,
+      floorFreeSeats: floorFree,
+      floorTotalSeats: floorTotal,
+    );
+
+List<String> _seatTileIds(WidgetTester tester) => tester
+    .widgetList<CupertinoButton>(
+      find.byWidgetPredicate((widget) =>
+          widget is CupertinoButton &&
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith('seat-item-')),
+    )
+    .map((button) =>
+        (button.key! as ValueKey<String>).value.substring('seat-item-'.length))
+    .toList();
+
 void main() {
+  testWidgets('全部座位稳定按可用优先排列，再搜索和每页12个分页', (tester) async {
+    final source = List<LibrarySeat>.unmodifiable([
+      for (final available in [false, true])
+        for (var index = 0; index < 13; index++)
+          LibrarySeat(
+            id: '${available ? 'free' : 'occupied'}-$index',
+            name: '${available ? '可用' : '占用'} $index',
+            canReserve: available,
+            labels: index < (available ? 5 : 3) ? const ['靠窗'] : const [],
+          ),
+    ]);
+    final client = _FakeSeatClient()..seats = source;
+    await _openPage(tester, client);
+    await _selectArea(tester);
+    expect(_seatTileIds(tester), [for (var i = 0; i < 12; i++) 'free-$i']);
+    expect(find.text('可用/总数 · 13/26'), findsOneWidget);
+    final next = find.byKey(const ValueKey('seat-page-next'));
+    await _scrollTo(tester, next);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(_seatTileIds(tester),
+        ['free-12', for (var i = 0; i < 11; i++) 'occupied-$i']);
+    expect(find.text('可用/总数 · 13/26'), findsOneWidget);
+    final search = find.byKey(const ValueKey('seat-search'));
+    await _scrollTo(tester, search, delta: -250);
+    await tester.enterText(search, '靠窗');
+    await tester.pumpAndSettle();
+    expect(_seatTileIds(tester), [
+      for (var i = 0; i < 5; i++) 'free-$i',
+      for (var i = 0; i < 3; i++) 'occupied-$i',
+    ]);
+    expect(find.text('可用/总数 · 5/8'), findsOneWidget);
+    expect(find.text('1 / 1'), findsOneWidget);
+    expect(source.first.id, 'occupied-0');
+    expect(source.last.id, 'free-12');
+  });
+
+  testWidgets('阅览区按实际可进入状态稳定排列，不改变楼层或源数据顺序', (tester) async {
+    final source = List<LibrarySeatArea>.unmodifiable([
+      _countedArea('disabled', canReserve: false),
+      _countedArea('first'),
+      _countedArea('unsupported', unsupportedReason: '需前往官网办理'),
+      _countedArea('second'),
+      _countedArea('other-floor', floorName: '一层', floorId: 'floor-1'),
+    ]);
+    final client = _FakeSeatClient()..areas = source;
+    await _openPage(tester, client);
+    final buttons = tester
+        .widgetList<CupertinoButton>(find.byWidgetPredicate(
+          (widget) =>
+              widget is CupertinoButton &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith('seat-area-'),
+        ))
+        .toList();
+    expect(buttons.map((button) => (button.key! as ValueKey<String>).value), [
+      'seat-area-first',
+      'seat-area-second',
+      'seat-area-disabled',
+      'seat-area-unsupported'
+    ]);
+    expect(buttons.take(2).every((button) => button.onPressed != null), isTrue);
+    expect(buttons.skip(2).every((button) => button.onPressed == null), isTrue);
+    expect(find.byKey(const ValueKey('seat-area-other-floor')), findsNothing);
+    expect(source.first.id, 'disabled');
+    expect(source.last.floorName, '一层');
+  });
+
+  testWidgets('同名楼层按真实楼层ID去重官方座位统计，只缺失的项回退区域合计', (tester) async {
+    final client = _FakeSeatClient()
+      ..areas = [
+        _countedArea('a', free: 2, total: 10, floorFree: 7, floorTotal: 50),
+        _countedArea('b', free: 3, total: 20, floorFree: 7, floorTotal: 50),
+        _countedArea('c',
+            floorId: 'another-floor-2', free: 4, total: 30, floorFree: 5),
+        _countedArea('room',
+            floorId: 'seminar-floor', type: '2', free: 900, total: 1000),
+      ];
+    await _openPage(tester, client);
+    expect(find.text('二层 · 12/80'), findsOneWidget);
+    expect(find.text('可用/总数 · 2/10'), findsOneWidget);
+    expect(find.text('可用/总数 · 900/1000'), findsNothing);
+    expect(find.text('可用/总数 · 按所选日期统计，具体时段以选座结果为准'), findsOneWidget);
+  });
+
+  testWidgets('没有楼层ID时合计完整普通区域，未知数目不能用区域个数补齐', (tester) async {
+    final client = _FakeSeatClient()
+      ..areas = [
+        _countedArea('a',
+            floorId: '', free: 1, total: 12, floorFree: 999, floorTotal: 999),
+        _countedArea('b', floorId: '', free: 2, total: 18),
+        _countedArea('c',
+            floorName: '三层', floorId: 'floor-3', free: 2, floorFree: 4),
+        _countedArea('d', floorName: '三层', floorId: 'floor-3', total: 20),
+        _countedArea('e',
+            floorName: '四层', floorId: 'floor-4a', free: 2, total: 6),
+        _countedArea('f', floorName: '四层', floorId: 'floor-4b', total: 10),
+        _countedArea('g', floorName: '五层', floorId: 'floor-5'),
+        _countedArea('h',
+            floorName: '六层',
+            floorId: 'floor-6',
+            free: 10,
+            total: 20,
+            floorFree: 30),
+        _countedArea('i',
+            floorName: '七层', floorId: 'floor-7', free: 3, total: 10),
+        _countedArea('i',
+            floorName: '七层', floorId: 'floor-7', free: 3, total: 10),
+      ];
+    await _openPage(tester, client);
+    expect(find.text('二层 · 3/30'), findsOneWidget);
+    expect(find.text('三层 · 4/—'), findsOneWidget);
+    expect(find.text('四层 · —/16'), findsOneWidget);
+    expect(find.text('五层 · —/—'), findsOneWidget);
+    expect(find.text('六层 · —/—'), findsOneWidget);
+    expect(find.text('七层 · 3/10'), findsOneWidget);
+  });
+
+  testWidgets('目录刷新及切换日期清除旧统计并显示新响应', (tester) async {
+    final client = _FakeSeatClient()
+      ..areas = [_countedArea('a', free: 2, total: 30)];
+    await _openPage(tester, client);
+    expect(find.text('二层 · 2/30'), findsOneWidget);
+    client.areas = [_countedArea('a', free: 3, total: 30)];
+    await tester.tap(find.byKey(const ValueKey('seat-refresh')));
+    await tester.pumpAndSettle();
+    expect(find.text('二层 · 3/30'), findsOneWidget);
+    expect(find.text('二层 · 2/30'), findsNothing);
+
+    final pending = Completer<List<LibrarySeatArea>>();
+    client.pendingAreas = pending;
+    await tester.tap(find.byKey(const ValueKey('seat-date')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(
+        of: find.byType(CupertinoActionSheet),
+        matching: find.text(_secondDate)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('二层 · 3/30'), findsNothing);
+    pending.complete([_countedArea('a', free: 8, total: 30)]);
+    await tester.pumpAndSettle();
+    expect(find.text('二层 · 8/30'), findsOneWidget);
+    expect(find.text(_secondDate), findsOneWidget);
+  });
+
+  testWidgets('具体时段刷新失败不保留旧统计或显示伪造零座位', (tester) async {
+    final client = _FakeSeatClient()..generatedSeatCount = 25;
+    await _openPage(tester, client);
+    await _selectArea(tester);
+    expect(find.text('可用/总数 · 24/25'), findsOneWidget);
+    client.seatError = const LibraryBookingException('暂时无法读取座位');
+    await tester.tap(find.byKey(const ValueKey('seat-refresh')));
+    await tester.pumpAndSettle();
+    expect(find.text('可用/总数 · —/—'), findsOneWidget);
+    expect(find.text('可用/总数 · 24/25'), findsNothing);
+    expect(find.text('可用/总数 · 0/0'), findsNothing);
+  });
+
   testWidgets('目录和选座分步显示，页内及 Android 返回保留选择', (tester) async {
     final client = _FakeSeatClient();
     await _openPage(tester, client);
@@ -323,12 +523,13 @@ void main() {
         (widget.key! as ValueKey<String>).value.startsWith('seat-item-'));
     expect(tiles, findsNWidgets(12));
     final first = find.byKey(const ValueKey('seat-item-bulk-0'));
-    final third = find.byKey(const ValueKey('seat-item-bulk-2'));
-    final fourth = find.byKey(const ValueKey('seat-item-bulk-3'));
+    final third = find.byKey(const ValueKey('seat-item-bulk-3'));
+    final fourth = find.byKey(const ValueKey('seat-item-bulk-4'));
     expect(tester.getTopLeft(first).dy, tester.getTopLeft(third).dy);
     expect(
         tester.getTopLeft(fourth).dy, greaterThan(tester.getTopLeft(first).dy));
-    expect(tester.widget<CupertinoButton>(third).onPressed, isNull);
+    expect(find.byKey(const ValueKey('seat-item-bulk-2')), findsNothing);
+    expect(find.text('可用/总数 · 24/25'), findsOneWidget);
     await _scrollTo(tester, first);
     await tester.tap(first);
     await tester.pumpAndSettle();
@@ -350,6 +551,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('3 / 3'), findsOneWidget);
     expect(tiles, findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoButton>(
+                find.byKey(const ValueKey('seat-item-bulk-2')))
+            .onPressed,
+        isNull);
     expect(tester.widget<CupertinoButton>(next).onPressed, isNull);
     await tester.tap(find.byKey(const ValueKey('seat-page-previous')));
     await tester.pumpAndSettle();
@@ -506,6 +713,7 @@ void main() {
     await _openPage(tester, client);
     await _selectArea(tester);
     expect(find.textContaining('座位空闲情况获取失败'), findsOneWidget);
+    expect(find.text('可用/总数 · —/—'), findsOneWidget);
     expect(client.seatCalls, 1);
     _expectNoSubmitAction(tester);
 
@@ -531,6 +739,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('没有符合条件的座位。'), findsOneWidget);
+    expect(find.text('可用/总数 · 0/0'), findsOneWidget);
     expect(find.byKey(const ValueKey('seat-item-area-2-$_firstDate')),
         findsNothing);
     _expectNoSubmitAction(tester);

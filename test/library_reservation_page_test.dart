@@ -34,6 +34,28 @@ const _thirdFloorRoom = LibraryRoom(
   floorName: '三层',
 );
 
+LibraryRoom _catalogRoom(String id,
+        {bool canReserve = true, bool known = true, bool thirdFloor = false}) =>
+    LibraryRoom(
+      id: id,
+      name: id,
+      buildingId: 'test-building',
+      floorId: thirdFloor ? 'floor-3' : 'floor-2',
+      floorName: thirdFloor ? '三层' : '二层',
+      canReserve: canReserve,
+      availabilityKnown: known,
+    );
+
+List<String> _displayedRoomIds(WidgetTester tester) => tester
+    .widgetList<CupertinoButton>(find.byWidgetPredicate((widget) =>
+        widget is CupertinoButton &&
+        widget.key is ValueKey<String> &&
+        (widget.key! as ValueKey<String>).value.startsWith('library-room-')))
+    .map((button) => (button.key! as ValueKey<String>)
+        .value
+        .substring('library-room-'.length))
+    .toList();
+
 class _FakeLibraryBookingClient implements LibraryBookingClient {
   _FakeLibraryBookingClient() {
     final tomorrow = DateTime.now().add(const Duration(days: 1));
@@ -340,10 +362,105 @@ void main() {
     expect(find.byKey(const ValueKey('library-room-test-room')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('library-floor-unassigned')));
     await tester.pumpAndSettle();
-    expect(find.text('未标注楼层 · 2'), findsOneWidget);
+    expect(find.text('未标注楼层 · 2/2'), findsOneWidget);
     expect(find.text('未知楼层 A'), findsOneWidget);
     expect(find.text('未知楼层 B'), findsOneWidget);
     expect(find.textContaining('internal-'), findsNothing);
+  });
+
+  testWidgets('同楼层按可用、待确认、不可用稳定排列且不更改权限和官网数据', (tester) async {
+    final source = List<LibraryRoom>.unmodifiable([
+      _catalogRoom('closed-a', canReserve: false),
+      _catalogRoom('unknown-a', known: false),
+      _catalogRoom('available-a'),
+      _catalogRoom('closed-b', canReserve: false),
+      _catalogRoom('available-b'),
+      _catalogRoom('unknown-b', canReserve: false, known: false),
+    ]);
+    final originalIds = source.map((room) => room.id).toList();
+    final client = _FakeLibraryBookingClient()..rooms = source;
+    await _openPage(tester, client);
+
+    expect(_displayedRoomIds(tester), [
+      'available-a',
+      'available-b',
+      'unknown-a',
+      'unknown-b',
+      'closed-a',
+      'closed-b',
+    ]);
+    expect(client.rooms.map((room) => room.id), originalIds);
+    expect(find.text('二层 · 2/6 · 2待确认'), findsOneWidget);
+    expect(find.text('可用/总数，待确认的研讨间可进入详情查询'), findsOneWidget);
+    for (final id in ['unknown-a', 'unknown-b']) {
+      expect(
+          tester
+              .widget<CupertinoButton>(find.byKey(ValueKey('library-room-$id')))
+              .onPressed,
+          isNotNull);
+    }
+    for (final id in ['closed-a', 'closed-b']) {
+      expect(
+          tester
+              .widget<CupertinoButton>(find.byKey(ValueKey('library-room-$id')))
+              .onPressed,
+          isNull);
+    }
+    expect(client.availabilityCalls, 0);
+  });
+
+  testWidgets('各楼层独立统计可用和待确认数量，楼层保留官网出现顺序', (tester) async {
+    final client = _FakeLibraryBookingClient()
+      ..rooms = [
+        _catalogRoom('third-closed', canReserve: false, thirdFloor: true),
+        _catalogRoom('second-available'),
+        _catalogRoom('third-unknown', known: false, thirdFloor: true),
+        _catalogRoom('second-closed', canReserve: false),
+      ];
+    await _openPage(tester, client);
+    final floorIds = tester
+        .widgetList<CupertinoButton>(find.byWidgetPredicate((widget) =>
+            widget is CupertinoButton &&
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>)
+                .value
+                .startsWith('library-floor-')))
+        .map((button) => (button.key! as ValueKey<String>).value)
+        .toList();
+    expect(floorIds, ['library-floor-floor-3', 'library-floor-floor-2']);
+    expect(find.text('三层 · 0/2 · 1待确认'), findsOneWidget);
+    expect(find.text('二层 · 1/2'), findsOneWidget);
+    expect(_displayedRoomIds(tester), ['third-unknown', 'third-closed']);
+
+    await tester.tap(find.byKey(const ValueKey('library-floor-floor-2')));
+    await tester.pumpAndSettle();
+    expect(_displayedRoomIds(tester), ['second-available', 'second-closed']);
+  });
+
+  testWidgets('刷新重新统计并排序，未知状态确认后移除待确认说明', (tester) async {
+    final client = _FakeLibraryBookingClient()
+      ..rooms = [
+        _catalogRoom('closed', canReserve: false),
+        _catalogRoom('available'),
+        _catalogRoom('pending', known: false),
+      ];
+    await _openPage(tester, client);
+    expect(find.text('二层 · 1/3 · 1待确认'), findsOneWidget);
+    expect(_displayedRoomIds(tester), ['available', 'pending', 'closed']);
+
+    client.rooms = [
+      _catalogRoom('closed', canReserve: false),
+      _catalogRoom('available', canReserve: false),
+      _catalogRoom('pending'),
+    ];
+    await tester.tap(find.byKey(const ValueKey('library-refresh')));
+    await tester.pumpAndSettle();
+    expect(client.catalogCalls, 2);
+    expect(client.roomCalls, 2);
+    expect(_displayedRoomIds(tester), ['pending', 'closed', 'available']);
+    expect(find.text('二层 · 1/3'), findsOneWidget);
+    expect(find.textContaining('待确认'), findsNothing);
+    expect(find.text('可用/总数'), findsOneWidget);
   });
 
   testWidgets('界面与系统返回保留时段和申请内容，重新进入同房间不丢草稿', (tester) async {

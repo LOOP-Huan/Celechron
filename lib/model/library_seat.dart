@@ -27,7 +27,12 @@ class LibrarySeatArea {
   final String id;
   final String name;
   final String buildingId;
+  final String floorId;
   final String floorName;
+  final int? freeSeats;
+  final int? totalSeats;
+  final int? floorFreeSeats;
+  final int? floorTotalSeats;
   final String typeCategory;
   final bool canReserve;
   final String? unsupportedReason;
@@ -36,7 +41,12 @@ class LibrarySeatArea {
     required this.id,
     required this.name,
     required this.buildingId,
+    this.floorId = '',
     this.floorName = '',
+    this.freeSeats,
+    this.totalSeats,
+    this.floorFreeSeats,
+    this.floorTotalSeats,
     this.typeCategory = '1',
     this.canReserve = true,
     this.unsupportedReason,

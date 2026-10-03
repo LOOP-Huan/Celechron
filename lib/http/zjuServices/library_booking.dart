@@ -1076,11 +1076,16 @@ class LibraryBookingService
     required String date,
   }) async {
     final data = await _seatDirectory(date);
-    final floors = <String, String>{};
+    final floors = <String, ({String name, int? free, int? total})>{};
     for (final value in _list(data['storey'])) {
       final floor = _map(value);
       if (_string(floor['topId']) == buildingId) {
-        floors[_requiredString(floor['id'])] = _requiredString(floor['name']);
+        final counts = _seatCounts(floor);
+        floors[_requiredString(floor['id'])] = (
+          name: _requiredString(floor['name']),
+          free: counts.free,
+          total: counts.total,
+        );
       }
     }
     final result = <LibrarySeatArea>[];
@@ -1090,17 +1095,47 @@ class LibraryBookingService
       final type = _string(area['typeCategory']);
       final supported = type == '1';
       final freeSeats = num.tryParse(_string(area['free_num']));
+      final floorId = _string(area['parentId']);
+      final floor = floors[floorId];
+      final counts = _seatCounts(area);
       result.add(LibrarySeatArea(
         id: _requiredString(area['id']),
         name: _requiredString(area['name']),
         buildingId: buildingId,
-        floorName: floors[_string(area['parentId'])] ?? '',
+        floorId: floorId,
+        floorName: floor?.name ?? '',
+        freeSeats: counts.free,
+        totalSeats: counts.total,
+        floorFreeSeats: floor?.free,
+        floorTotalSeats: floor?.total,
         typeCategory: type,
         canReserve: supported && freeSeats != null && freeSeats > 0,
         unsupportedReason: supported ? null : '此区域使用其他空间预约流程，请前往图书馆官网办理。',
       ));
     }
     return result;
+  }
+
+  static ({int? free, int? total}) _seatCounts(Map<String, dynamic> row) {
+    final free = _seatCount(row['free_num']);
+    final total = _seatCount(row['total_num']);
+    // Keep these display-only counts separate from permission checks. Missing
+    // totals still permit displaying a known free count; contradictory pairs do not.
+    if (free != null && total != null && free > total) {
+      return (free: null, total: null);
+    }
+    return (free: free, total: total);
+  }
+
+  static int? _seatCount(dynamic value) {
+    final number = value is num
+        ? value
+        : value is String
+            ? num.tryParse(value.trim())
+            : null;
+    if (number == null || !number.isFinite || number < 0) return null;
+    final integer = number.toInt();
+    return integer == number ? integer : null;
   }
 
   @override

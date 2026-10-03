@@ -1242,7 +1242,12 @@ void _seatBookingTests() {
       final areas =
           await service.loadSeatAreas(buildingId: '3', date: '2026-10-03');
       expect(areas.map((area) => area.id), ['31', '32', '33']);
+      expect(areas.first.floorId, '30');
       expect(areas.first.floorName, '二层');
+      expect(areas.first.freeSeats, 10);
+      expect(areas.first.totalSeats, 40);
+      expect(areas.map((area) => area.floorFreeSeats), [35, 35, 35]);
+      expect(areas.map((area) => area.floorTotalSeats), [120, 120, 120]);
       expect(areas.map((area) => area.canReserve), [true, false, false]);
       final availability =
           await service.loadSeatAvailability(area: areas.first);
@@ -1263,6 +1268,101 @@ void _seatBookingTests() {
         expect(request.headers.value('authorization'), 'bearerfake-token');
         expect(request.json['authorization'], 'bearerfake-token');
       }
+      expect(client.steps, isEmpty);
+    });
+
+    test('楼层统计只映射同馆官方楼层，不以区域数或其他馆统计补齐', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectSeatCatalog(client, floors: [
+        {
+          'id': '30',
+          'name': '其他馆二层',
+          'topId': '9',
+          'free_num': 77,
+          'total_num': 90
+        },
+        {'id': '50', 'name': '本馆五层', 'topId': '3'},
+      ], areas: [
+        {
+          'id': 'a',
+          'name': '区域一',
+          'topId': '3',
+          'parentId': '30',
+          'typeCategory': '1',
+          'free_num': 4,
+          'total_num': 10
+        },
+        {
+          'id': 'b',
+          'name': '区域二',
+          'topId': '3',
+          'parentId': '50',
+          'typeCategory': '1',
+          'free_num': 2,
+          'total_num': 6
+        },
+        {'id': 'c', 'name': '区域三', 'topId': '3', 'typeCategory': '1'},
+      ]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      final areas =
+          await service.loadSeatAreas(buildingId: '3', date: '2026-10-03');
+      expect(areas.map((area) => area.id), ['a', 'b', 'c']);
+      expect(areas.map((area) => area.floorId), ['30', '50', '']);
+      expect(areas.map((area) => area.floorName), ['', '本馆五层', '']);
+      expect(areas.map((area) => area.freeSeats), [4, 2, null]);
+      expect(areas.map((area) => area.totalSeats), [10, 6, null]);
+      expect(
+          areas.every((area) =>
+              area.floorFreeSeats == null && area.floorTotalSeats == null),
+          isTrue);
+      expect(client.steps, isEmpty);
+    });
+
+    test('数量字段只保留非负整数，缺失与矛盾统计不影响原可查询判定', () async {
+      final client = _Client();
+      _expectLogin(client);
+      final counts = <(dynamic, dynamic)>[
+        (null, null),
+        (-1, -4),
+        ('未知', true),
+        ('1.5', 8.5),
+        ('NaN', 'Infinity'),
+        (8, 2),
+        ('4', null),
+        (0, '0'),
+      ];
+      _expectSeatCatalog(client, floors: [
+        {'id': '30', 'name': '二层', 'topId': '3', 'free_num': 9, 'total_num': 5},
+      ], areas: [
+        for (var index = 0; index < counts.length; index++)
+          {
+            'id': '$index',
+            'name': '区域 $index',
+            'topId': '3',
+            'parentId': '30',
+            'typeCategory': '1',
+            'free_num': counts[index].$1,
+            'total_num': counts[index].$2
+          },
+      ]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+
+      final areas =
+          await service.loadSeatAreas(buildingId: '3', date: '2026-10-03');
+      expect(areas.map((area) => area.freeSeats),
+          [null, null, null, null, null, null, 4, 0]);
+      expect(areas.map((area) => area.totalSeats),
+          [null, null, null, null, null, null, null, 0]);
+      expect(
+          areas.every((area) =>
+              area.floorFreeSeats == null && area.floorTotalSeats == null),
+          isTrue);
+      expect(areas[5].canReserve, isTrue);
+      expect(areas[6].canReserve, isTrue);
       expect(client.steps, isEmpty);
     });
 
@@ -2090,7 +2190,8 @@ _Response _seatDatesResponse({List<Map<String, dynamic>>? days}) =>
           ]
     });
 
-void _expectSeatCatalog(_Client client, {List<Map<String, dynamic>>? areas}) {
+void _expectSeatCatalog(_Client client,
+    {List<Map<String, dynamic>>? areas, List<Map<String, dynamic>>? floors}) {
   client.expectRequest('POST', '/reserve/index/quickSelect', (request) {
     expect(request.json, {
       'id': '1',
@@ -2104,9 +2205,16 @@ void _expectSeatCatalog(_Client client, {List<Map<String, dynamic>>? areas}) {
         'premises': [
           {'id': '3', 'name': '测试图书馆'}
         ],
-        'storey': [
-          {'id': '30', 'name': '二层', 'topId': '3'}
-        ],
+        'storey': floors ??
+            [
+              {
+                'id': '30',
+                'name': '二层',
+                'topId': '3',
+                'free_num': '35',
+                'total_num': 120
+              }
+            ],
         'area': areas ??
             [
               {
@@ -2115,6 +2223,7 @@ void _expectSeatCatalog(_Client client, {List<Map<String, dynamic>>? areas}) {
                 'topId': '3',
                 'parentId': '30',
                 'free_num': 10,
+                'total_num': '40',
                 'typeCategory': '1'
               },
               {

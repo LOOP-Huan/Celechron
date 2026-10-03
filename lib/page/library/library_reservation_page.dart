@@ -276,6 +276,11 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                   ? '未标注楼层'
                   : entry.value.first.floorName.trim(),
               count: entry.value.length,
+              availableCount: entry.value
+                  .where((room) => room.availabilityKnown && room.canReserve)
+                  .length,
+              pendingCount:
+                  entry.value.where((room) => !room.availabilityKnown).length,
             ))
         .toList();
   }
@@ -922,16 +927,24 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
       ];
     }
     final floors = _floors;
-    final rooms = _rooms.where((room) => _floorKey(room) == _floorId);
+    final selectedRooms =
+        _rooms.where((room) => _floorKey(room) == _floorId).toList();
+    final rooms = [
+      ...selectedRooms
+          .where((room) => room.availabilityKnown && room.canReserve),
+      ...selectedRooms.where((room) => !room.availabilityKnown),
+      ...selectedRooms
+          .where((room) => room.availabilityKnown && !room.canReserve),
+    ];
     return [
       _panel([
         _selection('library-building', '馆区', _building?.name ?? '请选择',
             _chooseBuilding),
         _selection('library-date', '日期', _date ?? '请选择', _chooseDate),
       ]),
-      if (floors.isNotEmpty)
+      if (floors.isNotEmpty) ...[
         Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 4),
           child: LibraryFloorTabs(
             key: const ValueKey('library-floor-tabs'),
             floors: floors,
@@ -939,6 +952,10 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
             onChanged: _busy ? null : _chooseFloor,
           ),
         ),
+        _note(_rooms.any((room) => !room.availabilityKnown)
+            ? '可用/总数，待确认的研讨间可进入详情查询'
+            : '可用/总数'),
+      ],
       _panel([
         if (rooms.isEmpty && !_busy && _error == null)
           const Text('所选楼层在此日期暂无可预约研讨间。'),

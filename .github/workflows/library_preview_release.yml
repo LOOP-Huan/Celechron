@@ -20,11 +20,11 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v1.3.1-library-preview-20261003.4
-      RELEASE_TITLE: Celechron 1.3.1 研讨间操作完善版
-      APK_NAME: celechron-v1.3.1-library-preview6-universal.apk
+      RELEASE_TAG: v1.3.1-library-preview-20261003.5
+      RELEASE_TITLE: Celechron 1.3.1 可用优先与楼层统计版
+      APK_NAME: celechron-v1.3.1-library-preview7-universal.apk
       APP_VERSION: 1.3.1
-      APP_BUILD_NUMBER: '6'
+      APP_BUILD_NUMBER: '7'
 
     steps:
       - name: Check out the exact source commit
@@ -131,17 +131,17 @@ jobs:
           release_dir="$RUNNER_TEMP/library-preview-assets"
           notes_file="$RUNNER_TEMP/library-preview-release-notes.md"
           cat > "$notes_file" <<'NOTES'
-          研讨间取消和结束使用接入官网首页「当前预约卡片」的状态与权限，在 App 现有「我的预约」记录中提供对应操作，保持原有列表布局。
+          座位和研讨间目录优先展示可用项，将已预约或不可用项放到列表末尾。研讨间状态待确认时单独列在可用项之后；各组内保留官网顺序。
 
-          使用中的研讨间可按官网规则结束使用；可取消的预约保留取消操作。两项操作均需要确认，并在发送前重新核实最新权限；官网取消提醒会在确认时展示，提醒变化后要求重新确认。
+          楼层标签显示「可用数量/总数量」。研讨间待确认数量单独标注；座位优先采用官网楼层统计，缺失数据展示为「—」，不会把阅览区数量当作座位数量。座位楼层统计按所选日期展示，具体时段以选座结果为准。
 
-          权限查询失败不会误报可操作；操作结果未知时引导核实记录，不自动重复发送取消或结束请求。保留楼层分页、分步预约、座位网格和上一版座位取消修复，没有增加系统权限或定时预约功能。
+          座位排序在搜索与分页前完成，避免可用座位落在后续页面。选座页面同时显示搜索结果的可用/总数。保留原有分步预约、楼层切换、取消及结束使用功能，没有增加系统权限或定时预约功能。
 
-          此 APK 由当前源码在 GitHub Actions 中重新构建，完整自动测试已通过，并通过 APK 签名与 SHA-256 校验。新增回归覆盖官网当前卡片与历史权限差异、结束使用、权限变化、确认及防重复操作。本轮未使用真实校园账号执行取消或结束使用，实际结果请以官网记录为准。
+          此 APK 由当前源码在 GitHub Actions 中重新构建，完整自动测试已通过，并通过 APK 签名与 SHA-256 校验。新增回归覆盖稳定排序、跨页可用项优先、楼层统计去重与未知值、搜索及刷新。本轮未使用真实校园账号执行预约、取消或结束使用。
 
           **安装须知：**支持 Android 9 及以上，包含 arm64-v8a、armeabi-v7a、x86_64。本预发布使用本次 CI 生成的测试签名，与原版、上一预发布及本地测试包的签名不同，不能直接覆盖安装。卸载已有版本会清除本地数据，请先导出需要保留的数据。
 
-          版本：1.3.1+6。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
+          版本：1.3.1+7。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
           NOTES
           printf '\n源码提交：`%s`\n\n<!-- celechron-library-preview-source:%s -->\n' "$GITHUB_SHA" "$GITHUB_SHA" >> "$notes_file"
           gh release create "$RELEASE_TAG" \

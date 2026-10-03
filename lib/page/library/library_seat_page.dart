@@ -747,6 +747,56 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         ]),
       );
 
+  // Partition into fresh lists so each group keeps the server's order.
+  List<T> _availableFirst<T>(Iterable<T> values, bool Function(T) available) =>
+      [
+        ...values.where(available),
+        ...values.where((value) => !available(value)),
+      ];
+
+  String _seatCountsLabel(int? free, int? total) =>
+      '${free ?? '—'}/${total ?? '—'}';
+
+  ({int? free, int? total}) _floorSeatCounts(List<LibrarySeatArea> areas) {
+    final actualFloors = <String, Map<String, LibrarySeatArea>>{};
+    for (final area in areas.where((area) => area.typeCategory == '1')) {
+      actualFloors
+          .putIfAbsent(area.floorId, () => {})
+          .putIfAbsent(area.id, () => area);
+    }
+    int? sumComplete(Iterable<int?> values) {
+      if (values.isEmpty || values.any((value) => value == null)) return null;
+      return values.fold<int>(0, (sum, value) => sum + value!);
+    }
+
+    ({int? free, int? total}) consistent(int? free, int? total) =>
+        free != null && total != null && free > total
+            ? (free: null, total: null)
+            : (free: free, total: total);
+
+    final counts = actualFloors.entries.map((entry) {
+      int? count(bool free) {
+        // Official storey counts are repeated on areas: use once per ID.
+        final official = entry.key.isEmpty
+            ? null
+            : entry.value.values
+                .map(
+                    (area) => free ? area.floorFreeSeats : area.floorTotalSeats)
+                .whereType<int>()
+                .firstOrNull;
+        return official ??
+            sumComplete(entry.value.values
+                .map((area) => free ? area.freeSeats : area.totalSeats));
+      }
+
+      return consistent(count(true), count(false));
+    }).toList();
+    return consistent(
+      sumComplete(counts.map((count) => count.free)),
+      sumComplete(counts.map((count) => count.total)),
+    );
+  }
+
   List<Widget> _directoryWidgets() {
     final catalog = _catalog;
     if (catalog == null) return [];
@@ -755,11 +805,14 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         _panel([const Text('图书馆目前没有开放可预约的馆区或日期。')])
       ];
     }
-    final floors = <String, int>{};
+    final floors = <String, List<LibrarySeatArea>>{};
     for (final area in _areas) {
-      floors.update(area.floorName, (count) => count + 1, ifAbsent: () => 1);
+      floors.putIfAbsent(area.floorName, () => []).add(area);
     }
-    final areas = _areas.where((area) => area.floorName == _floor).toList();
+    final areas = _availableFirst(
+      floors[_floor] ?? <LibrarySeatArea>[],
+      (area) => area.canReserve && area.unsupportedReason == null,
+    );
     return [
       _panel([
         _selection(
@@ -769,17 +822,20 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
       if (floors.isNotEmpty) ...[
         LibraryFloorTabs(
           key: const ValueKey('seat-floor-tabs'),
-          floors: floors.entries
-              .map((entry) => LibraryFloorOption(
-                    id: entry.key,
-                    label: entry.key.isEmpty ? '未标注楼层' : entry.key,
-                    count: entry.value,
-                  ))
-              .toList(),
+          floors: floors.entries.map((entry) {
+            final counts = _floorSeatCounts(entry.value);
+            return LibraryFloorOption(
+              id: entry.key,
+              label: entry.key.isEmpty ? '未标注楼层' : entry.key,
+              availableCount: counts.free,
+              count: counts.total,
+            );
+          }).toList(),
           selectedId: _floor,
           onChanged: _busy ? null : _changeFloor,
         ),
-        const SizedBox(height: 12),
+        _note('可用/总数 · 按所选日期统计，具体时段以选座结果为准'),
+        const SizedBox(height: 4),
       ],
       _panel([
         if (areas.isEmpty && !_busy && _error == null)
@@ -798,6 +854,9 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(area.name),
+                  if (area.typeCategory == '1')
+                    _note(
+                        '可用/总数 · ${_seatCountsLabel(area.freeSeats, area.totalSeats)}'),
                   if (area.unsupportedReason != null)
                     _note(area.unsupportedReason!)
                   else if (!area.canReserve)
@@ -896,7 +955,7 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
 
   Widget _seatPanel() {
     final query = _search.text.trim().toLowerCase();
-    final matches = _seats
+    final matches = _availableFirst(_seats, (seat) => seat.canReserve)
         .where((seat) =>
             query.isEmpty ||
             seat.name.toLowerCase().contains(query) ||
@@ -907,15 +966,22 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
     final visible =
         matches.skip(page * _seatsPerPage).take(_seatsPerPage).toList();
     return _panel([
-      Row(children: [
-        const Expanded(
-            child: Text('选择座位', style: TextStyle(fontWeight: FontWeight.w600))),
-        Text('${matches.length} 个',
+      Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          const Text('选择座位', style: TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            '可用/总数 · ${_hasLoadedSeats ? _seatCountsLabel(matches.where((seat) => seat.canReserve).length, matches.length) : '—/—'}',
+            key: const ValueKey('seat-result-count'),
             style: TextStyle(
                 fontSize: 13,
                 color: CupertinoDynamicColor.resolve(
-                    CupertinoColors.secondaryLabel, context))),
-      ]),
+                    CupertinoColors.secondaryLabel, context)),
+          ),
+        ],
+      ),
       const SizedBox(height: 10),
       CupertinoSearchTextField(
         key: const ValueKey('seat-search'),

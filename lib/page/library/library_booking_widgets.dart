@@ -102,11 +102,15 @@ class LibraryFloorOption {
     required this.id,
     required this.label,
     required this.count,
+    this.availableCount,
+    this.pendingCount = 0,
   });
 
   final String id;
   final String label;
-  final int count;
+  final int? count;
+  final int? availableCount;
+  final int pendingCount;
 }
 
 /// Horizontal floor pages keep long room/area directories out of the form.
@@ -174,6 +178,15 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
               padding: const EdgeInsets.only(right: 8),
               child: Semantics(
                 selected: floor.id == widget.selectedId,
+                label: '${floor.label}，可用 ${floor.availableCount ?? '待查询'}，'
+                    '总数 ${floor.count ?? '待查询'}'
+                    '${floor.pendingCount > 0 ? '，${floor.pendingCount} 个待确认' : ''}',
+                excludeSemantics: true,
+                button: true,
+                enabled: widget.onChanged != null,
+                onTap: widget.onChanged == null
+                    ? null
+                    : () => widget.onChanged!(floor.id),
                 child: CupertinoButton(
                   key: ValueKey('library-floor-${floor.id}'),
                   padding:
@@ -189,7 +202,8 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
                       ? null
                       : () => widget.onChanged!(floor.id),
                   child: Text(
-                    '${floor.label} · ${floor.count}',
+                    '${floor.label} · ${floor.availableCount ?? '—'}/${floor.count ?? '—'}'
+                    '${floor.pendingCount > 0 ? ' · ${floor.pendingCount}待确认' : ''}',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: floor.id == widget.selectedId
