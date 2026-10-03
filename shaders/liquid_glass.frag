@@ -10,7 +10,6 @@ uniform vec3 u_localY;
 uniform vec4 u_toView;
 uniform float u_radius;
 uniform float u_refraction;
-uniform float u_blurSigma;
 uniform sampler2D u_backdrop;
 
 out vec4 fragColor;
@@ -85,25 +84,8 @@ void main() {
   vec2 refracted = viewPoint + viewDelta(optical);
   vec4 glass = sampleBackdrop(refracted);
 
-  // A normalized nine-tap kernel softens only the transmitted scene. Foreground
-  // text is painted after the backdrop layer and never enters this filter.
-  float blur = u_blurSigma * 1.5;
-  if (blur > 0.001) {
-    // Equal-radius taps preserve the old kernel's per-axis variance while
-    // avoiding its square grid of repeated fine strokes at high pixel density.
-    float ring = blur * 1.154700538;
-    vec2 dx = viewDelta(vec2(ring, 0.0));
-    vec2 dy = viewDelta(vec2(0.0, ring));
-    vec2 diagonalX = dx * 0.707106781;
-    vec2 diagonalY = dy * 0.707106781;
-    glass = glass * 0.25 +
-        (sampleBackdrop(refracted + dx) + sampleBackdrop(refracted - dx) +
-         sampleBackdrop(refracted + dy) + sampleBackdrop(refracted - dy) +
-         sampleBackdrop(refracted + diagonalX + diagonalY) +
-         sampleBackdrop(refracted - diagonalX + diagonalY) +
-         sampleBackdrop(refracted + diagonalX - diagonalY) +
-         sampleBackdrop(refracted - diagonalX - diagonalY)) * 0.09375;
-  }
+  // A native Gaussian filter smooths this transmitted scene after refraction.
+  // A sparse in-shader kernel would leave separated copies of small glyphs.
 
   float fresnel = 0.025 + 0.975 * pow(1.0 - normal.z, 5.0);
   vec2 lightDirection = vec2(-0.55, -0.83);

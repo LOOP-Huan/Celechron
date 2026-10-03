@@ -24,6 +24,9 @@ const _upper = Rect.fromLTWH(36, 220, 318, 188);
 const _foreground = Rect.fromLTWH(50, 370, 290, 26);
 const _offsets = [0.0, .25, .5, .75];
 
+String _dprLabel(double dpr) =>
+    dpr == dpr.roundToDouble() ? dpr.toInt().toString() : dpr.toString();
+
 class _BackgroundPattern extends CustomPainter {
   const _BackgroundPattern();
 
@@ -197,7 +200,7 @@ Future<Uint8List> _capture(
         ..createSync(recursive: true);
       final png = await image.toByteData(format: ui.ImageByteFormat.png);
       File(
-        '${directory.path}/$name-dpr${dpr.toInt()}.png',
+        '${directory.path}/$name-dpr${_dprLabel(dpr)}.png',
       ).writeAsBytesSync(png!.buffer.asUint8List());
     }
     image.dispose();
@@ -287,7 +290,7 @@ void main() {
     expect(await RefractiveGlass.preload(), isTrue);
   });
 
-  for (final dpr in [1.0, 2.0, 3.0]) {
+  for (final dpr in [1.0, 2.0, 2.75, 3.0, 3.5]) {
     testWidgets('sibling glass overlap and subpixel motion at DPR $dpr', (
       tester,
     ) async {
@@ -335,6 +338,8 @@ void main() {
         'top-edge': Rect.fromLTWH(60, 223, 265, 19),
         'left-edge': Rect.fromLTWH(39, 252, 19, 94),
         'center': Rect.fromLTWH(80, 265, 240, 80),
+        'bottom-coverage': Rect.fromLTWH(80, 398, 240, 6),
+        'right-coverage': Rect.fromLTWH(334, 252, 15, 94),
       };
       for (final offset in _offsets) {
         position.value = offset;
@@ -361,6 +366,16 @@ void main() {
           0,
           reason: 'Lower text outside the upper surface stays untouched.',
         );
+        // A composed intermediate filter once cropped the translated card's
+        // lower third to identity. Check far sides as well as the center so a
+        // sharp, unfiltered strip cannot pass the foreground/temporal checks.
+        for (final name in ['bottom-coverage', 'right-coverage']) {
+          expect(
+            _difference(reference, image, regions[name]!, dpr),
+            greaterThan(1),
+            reason: 'The non-origin surface must still filter its $name.',
+          );
+        }
         if (dpr == 1 && previous != null) {
           // A quarter-pixel translation in the gently magnified center must
           // not pop by more than a quarter of the full RGB intensity range.
@@ -424,7 +439,7 @@ void main() {
       }
       if (_captureDirectory.isNotEmpty) {
         File(
-          '$_captureDirectory/metrics-dpr${dpr.toInt()}.json',
+          '$_captureDirectory/metrics-dpr${_dprLabel(dpr)}.json',
         ).writeAsStringSync(
           const JsonEncoder.withIndent('  ').convert(metrics),
         );

@@ -8,6 +8,9 @@ import 'package:flutter/widgets.dart';
 
 /// Live backdrop refraction using Impeller's image-filter input texture.
 ///
+/// Refraction and continuous Gaussian smoothing use separate backdrop passes;
+/// foreground content is painted after both, without sparse blur samples.
+///
 /// The shader never captures the widget tree. Nested surfaces deliberately
 /// share their outer glass material instead of repeatedly filtering its pixels.
 /// Unsupported renderers and ambiguous offscreen render passes use a clear,
@@ -193,17 +196,17 @@ class _RenderGlassBackdrop extends RenderProxyBox {
     }, offset);
   }
 
-  ui.ImageFilter get fallback => ui.ImageFilter.blur(
+  ui.ImageFilter get smoothingFilter => ui.ImageFilter.blur(
       sigmaX: blurSigma, sigmaY: blurSigma, tileMode: ui.TileMode.clamp);
 
-  ui.ImageFilter filterForScene(bool offscreenInput) {
+  ui.ImageFilter? refractionFilterForScene(bool offscreenInput) {
     final shader = _shader;
     final root = owner?.rootNode;
     if (shader == null || offscreenInput || root is! RenderView || !attached) {
-      return fallback;
+      return null;
     }
     final viewSize = root.size;
-    if (viewSize.isEmpty) return fallback;
+    if (viewSize.isEmpty) return null;
     final transform = getTransformTo(null);
     final m = transform.storage;
     // Ordinary translation, scale, rotation and skew are supported. Perspective
@@ -216,10 +219,10 @@ class _RenderGlassBackdrop extends RenderProxyBox {
         m[3] != 0 ||
         m[7] != 0 ||
         m[15] != 1) {
-      return fallback;
+      return null;
     }
     final inverse = Matrix4.copy(transform);
-    if (inverse.invert().abs() < 0.00000001) return fallback;
+    if (inverse.invert().abs() < 0.00000001) return null;
     final inv = inverse.storage;
     // The engine overwrites float indices 0 and 1 with the input texture size.
     // Dividing by that size in GLSL also handles DPR and scene capture scaling.
@@ -240,7 +243,6 @@ class _RenderGlassBackdrop extends RenderProxyBox {
       m[5],
       radius,
       refraction,
-      blurSigma,
     ];
     for (var index = 0; index < values.length; index++) {
       shader.setFloat(index + 2, values[index]);
@@ -262,6 +264,8 @@ class _GlassBackdropLayer extends ContainerLayer {
   _GlassBackdropLayer(this.geometry);
 
   final _RenderGlassBackdrop geometry;
+  ui.BackdropFilterEngineLayer? _refractionLayer;
+  ui.BackdropFilterEngineLayer? _smoothingLayer;
 
   // Scrolling a retained RepaintBoundary can move its layer without calling
   // RenderObject.paint. Refresh coordinates at composition, not only at paint.
@@ -296,11 +300,51 @@ class _GlassBackdropLayer extends ContainerLayer {
   void addToScene(ui.SceneBuilder builder) {
     // Such ancestors may crop/rebase the input texture. Flutter 3.38 exposes
     // its size but not that origin, so using screen coordinates would be wrong.
-    engineLayer = builder.pushBackdropFilter(
-      geometry.filterForScene(_hasOffscreenInput),
-      oldLayer: engineLayer as ui.BackdropFilterEngineLayer?,
+    final refraction = geometry.refractionFilterForScene(_hasOffscreenInput);
+    engineLayer = builder.pushOffset(
+      0,
+      0,
+      oldLayer: engineLayer as ui.OffsetEngineLayer?,
     );
+    if (refraction != null) {
+      final previous = _refractionLayer;
+      _refractionLayer = builder.pushBackdropFilter(
+        refraction,
+        oldLayer: previous,
+      );
+      previous?.dispose();
+      // Commit refraction to the parent before filtering its result. Composing
+      // the filters would snapshot the runtime shader with an incorrect
+      // translated coverage in Flutter 3.38, truncating non-origin surfaces.
+      builder.pop();
+    } else {
+      _refractionLayer?.dispose();
+      _refractionLayer = null;
+    }
+    final smooth = refraction == null || geometry.blurSigma > 0;
+    if (smooth) {
+      final previous = _smoothingLayer;
+      _smoothingLayer = builder.pushBackdropFilter(
+        geometry.smoothingFilter,
+        oldLayer: previous,
+      );
+      previous?.dispose();
+    } else {
+      _smoothingLayer?.dispose();
+      _smoothingLayer = null;
+    }
+    // Foreground text and decoration are painted only after both filters.
     addChildrenToScene(builder);
+    if (smooth) builder.pop();
     builder.pop();
+  }
+
+  @override
+  void dispose() {
+    _refractionLayer?.dispose();
+    _smoothingLayer?.dispose();
+    _refractionLayer = null;
+    _smoothingLayer = null;
+    super.dispose();
   }
 }
