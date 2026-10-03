@@ -1,7 +1,7 @@
 name: celechron
 description: Time scheduler for zjuers.
 publish_to: "none"
-version: 1.4.0+13
+version: 1.4.1+14
 environment:
   sdk: ">=3.10.0 <4.0.0"
   flutter: ">=3.38.1"

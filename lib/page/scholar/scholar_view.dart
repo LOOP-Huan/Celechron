@@ -37,8 +37,9 @@ Future<void> showRefreshResultDialog(
   final messages = results.whereType<String>().toList();
   // 完全成功只通过数据、更新时间和页面状态反馈，不主动打断用户。
   if (messages.isEmpty) return;
-  final degraded =
-      messages.where(isDegradedRefreshText).toList(growable: false);
+  final degraded = messages
+      .where(isDegradedRefreshText)
+      .toList(growable: false);
   final failures = messages
       .where((message) => !isDegradedRefreshText(message))
       .toList(growable: false);
@@ -69,11 +70,15 @@ Future<void> showRefreshResultDialog(
                   title: const Text('刷新详情'),
                   content: SingleChildScrollView(
                     child: Text(
-                      messages.map((error) {
-                        final short = shortErrorText(error);
-                        final details = detailedErrorText(error);
-                        return details == short ? short : '$short\n$details';
-                      }).join('\n\n'),
+                      messages
+                          .map((error) {
+                            final short = shortErrorText(error);
+                            final details = detailedErrorText(error);
+                            return details == short
+                                ? short
+                                : '$short\n$details';
+                          })
+                          .join('\n\n'),
                     ),
                   ),
                   actions: [
@@ -134,6 +139,101 @@ class ScholarErrorHandler extends StatelessWidget {
   }
 }
 
+/// Section titles sit on the page backdrop, matching the Settings groups.
+/// Only the content owns a glass surface, avoiding an extra tinted outer shell.
+class _ScholarSection extends StatelessWidget {
+  const _ScholarSection({
+    required this.header,
+    required this.child,
+    this.onTap,
+    this.animate = true,
+  });
+
+  final Widget header;
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool animate;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    // Hero transitions temporarily constrain the section to the destination's
+    // height; retain the previous scroll viewport so its content can fit.
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        const SizedBox(height: 6),
+        RoundRectangleCard(onTap: onTap, animate: animate, child: child),
+      ],
+    ),
+  );
+}
+
+/// Keep long update/error labels readable when the window or font size changes.
+class _ScholarSectionHeader extends StatelessWidget {
+  const _ScholarSectionHeader({
+    required this.title,
+    required this.icon,
+    required this.status,
+    required this.statusIcon,
+  });
+
+  final String title;
+  final IconData icon;
+  final String? status;
+  final IconData statusIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = CupertinoDynamicColor.resolve(CupertinoColors.label, context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 16, 6),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          if (status != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(statusIcon, size: 14, color: color),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    status!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class ScholarPage extends StatelessWidget {
   ScholarPage({super.key});
 
@@ -167,7 +267,7 @@ class ScholarPage extends StatelessWidget {
       return s.replaceAll('.', '').replaceAll(RegExp(r'[\d.]'), '*');
     }
 
-    return RoundRectangleCard(
+    return Padding(
       padding: const EdgeInsets.all(0),
       child: Column(
         children: [
@@ -176,99 +276,34 @@ class ScholarPage extends StatelessWidget {
               Expanded(
                 child: Hero(
                   tag: 'gradeBrief',
-                  child: RoundRectangleCardWithForehead(
-                    foreheadColor: CustomCupertinoDynamicColors
-                        .okGreen.darkColor
-                        .withValues(alpha: 0.25),
-                    forehead: Obx(
-                      () => Row(
-                        children: [
-                          // University Icon
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 12,
-                              top: 6,
-                              bottom: 6,
-                            ),
-                            child: Icon(
-                              Icons.school,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                              size: 18,
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 6,
-                              top: 6,
-                              bottom: 6,
-                            ),
-                            child: Text(
-                              '成绩',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                overflow: TextOverflow.ellipsis,
-                                color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.label,
-                                  context,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          // alert icon
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 4),
-                            child: Icon(
-                              _scholarController
-                                          .durationToLastUpdateGrade.inMinutes <
-                                      5
-                                  ? CupertinoIcons.check_mark_circled_solid
-                                  : CupertinoIcons.exclamationmark_circle_fill,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                              size: 14,
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 4,
-                              top: 4,
-                              bottom: 4,
-                              right: 16,
-                            ),
-                            child: Text(
-                              _scholarController
-                                          .durationToLastUpdateGrade.inMinutes >
-                                      10000000
-                                  ? '获取数据时遇到问题'
-                                  : '更新于 ${_scholarController.durationToLastUpdateGrade.inMinutes} 分钟前',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                overflow: TextOverflow.ellipsis,
-                                color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.label,
-                                  context,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                  child: _ScholarSection(
+                    header: Obx(
+                      () => _ScholarSectionHeader(
+                        title: '成绩',
+                        icon: Icons.school,
+                        status:
+                            _scholarController
+                                    .durationToLastUpdateGrade
+                                    .inMinutes >
+                                10000000
+                            ? '获取数据时遇到问题'
+                            : '更新于 ${_scholarController.durationToLastUpdateGrade.inMinutes} 分钟前',
+                        statusIcon:
+                            _scholarController
+                                    .durationToLastUpdateGrade
+                                    .inMinutes <
+                                5
+                            ? CupertinoIcons.check_mark_circled_solid
+                            : CupertinoIcons.exclamationmark_circle_fill,
                       ),
                     ),
                     onTap: () async =>
                         Navigator.of(context, rootNavigator: true).push(
-                      CupertinoPageRoute(
-                        builder: (context) => GradeDetailPage(),
-                        fullscreenDialog: true,
-                      ),
-                    ),
+                          CupertinoPageRoute(
+                            builder: (context) => GradeDetailPage(),
+                            fullscreenDialog: true,
+                          ),
+                        ),
                     child: Column(
                       children: [
                         Row(
@@ -332,7 +367,8 @@ class ScholarPage extends StatelessWidget {
                                   title: '主修均绩',
                                   content: maskGPA(
                                     _scholarController
-                                        .scholar.majorGpaAndCredit[0]
+                                        .scholar
+                                        .majorGpaAndCredit[0]
                                         .toStringAsFixed(2),
                                   ),
                                   backgroundColor:
@@ -347,7 +383,8 @@ class ScholarPage extends StatelessWidget {
                                   title: '主修学分',
                                   content: maskGPA(
                                     _scholarController
-                                        .scholar.majorGpaAndCredit[1]
+                                        .scholar
+                                        .majorGpaAndCredit[1]
                                         .toStringAsFixed(1),
                                   ),
                                   backgroundColor:
@@ -385,97 +422,33 @@ class ScholarPage extends StatelessWidget {
   }
 
   Widget _buildSemester(BuildContext context) {
-    return RoundRectangleCard(
+    return Padding(
       padding: const EdgeInsets.all(0),
       child: Column(
         children: [
           Row(
             children: [
               Expanded(
-                child: RoundRectangleCardWithForehead(
+                child: _ScholarSection(
                   animate: false,
-                  foreheadColor: CustomCupertinoDynamicColors.cyan.darkColor
-                      .withValues(alpha: 0.25),
-                  forehead: Obx(
-                    () => Row(
-                      children: [
-                        // University Icon
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 12,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Icon(
-                            Icons.calendar_month_rounded,
-                            color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
-                            size: 18,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 6,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Text(
-                            '课程',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        // alert icon
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 4),
-                          child: Icon(
-                            _scholarController
-                                        .durationToLastUpdateCourse.inMinutes <
-                                    5
-                                ? CupertinoIcons.check_mark_circled_solid
-                                : CupertinoIcons.exclamationmark_circle_fill,
-                            color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
-                            size: 14,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 4,
-                            top: 4,
-                            bottom: 4,
-                            right: 16,
-                          ),
-                          child: Text(
-                            _scholarController
-                                        .durationToLastUpdateCourse.inMinutes >
-                                    10000000
-                                ? '获取数据时遇到问题'
-                                : '更新于 ${_scholarController.durationToLastUpdateCourse.inMinutes} 分钟前',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  header: Obx(
+                    () => _ScholarSectionHeader(
+                      title: '课程',
+                      icon: Icons.calendar_month_rounded,
+                      status:
+                          _scholarController
+                                  .durationToLastUpdateCourse
+                                  .inMinutes >
+                              10000000
+                          ? '获取数据时遇到问题'
+                          : '更新于 ${_scholarController.durationToLastUpdateCourse.inMinutes} 分钟前',
+                      statusIcon:
+                          _scholarController
+                                  .durationToLastUpdateCourse
+                                  .inMinutes <
+                              5
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.exclamationmark_circle_fill,
                     ),
                   ),
                   child: Column(
@@ -520,24 +493,24 @@ class ScholarPage extends StatelessWidget {
                         titles: const ['课程', '学分', '考试'],
                         onTaps: [
                           () => Navigator.of(context, rootNavigator: true).push(
-                                CupertinoPageRoute(
-                                  builder: (context) => CourseListPage(
-                                    initialSemesterName: _scholarController
-                                        .selectedSemester.name,
-                                  ),
-                                  title: '课程',
-                                ),
+                            CupertinoPageRoute(
+                              builder: (context) => CourseListPage(
+                                initialSemesterName:
+                                    _scholarController.selectedSemester.name,
                               ),
+                              title: '课程',
+                            ),
+                          ),
                           null,
                           () => Navigator.of(context, rootNavigator: true).push(
-                                CupertinoPageRoute(
-                                  builder: (context) => ExamListPage(
-                                    initialSemesterName: _scholarController
-                                        .selectedSemester.name,
-                                  ),
-                                  title: '考试',
-                                ),
+                            CupertinoPageRoute(
+                              builder: (context) => ExamListPage(
+                                initialSemesterName:
+                                    _scholarController.selectedSemester.name,
                               ),
+                              title: '考试',
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -547,27 +520,30 @@ class ScholarPage extends StatelessWidget {
                             child: TwoLineCard(
                               animate: true,
                               // With CupertinoPageTransition
-                              onTap: () => Navigator.of(
-                                context,
-                                rootNavigator: true,
-                              ).push(
-                                CupertinoPageRoute(
-                                  builder: (context) => CourseSchedulePage(
-                                    _scholarController.selectedSemester.name,
-                                    true,
+                              onTap: () =>
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).push(
+                                    CupertinoPageRoute(
+                                      builder: (context) => CourseSchedulePage(
+                                        _scholarController
+                                            .selectedSemester
+                                            .name,
+                                        true,
+                                      ),
+                                      title: '课表',
+                                    ),
                                   ),
-                                  title: '课表',
-                                ),
-                              ),
                               title:
                                   '${_scholarController.selectedSemester.firstHalfName}学期课时',
                               content:
                                   '${_scholarController.selectedSemester.firstHalfSessionCount}节/两周',
                               backgroundColor:
                                   _scholarController.selectedSemester.name[9] ==
-                                          '春'
-                                      ? CustomCupertinoDynamicColors.spring
-                                      : CustomCupertinoDynamicColors.autumn,
+                                      '春'
+                                  ? CustomCupertinoDynamicColors.spring
+                                  : CustomCupertinoDynamicColors.autumn,
                               withColoredFont: true,
                             ),
                           ),
@@ -575,27 +551,30 @@ class ScholarPage extends StatelessWidget {
                           Expanded(
                             child: TwoLineCard(
                               animate: true,
-                              onTap: () => Navigator.of(
-                                context,
-                                rootNavigator: true,
-                              ).push(
-                                CupertinoPageRoute(
-                                  builder: (context) => CourseSchedulePage(
-                                    _scholarController.selectedSemester.name,
-                                    false,
+                              onTap: () =>
+                                  Navigator.of(
+                                    context,
+                                    rootNavigator: true,
+                                  ).push(
+                                    CupertinoPageRoute(
+                                      builder: (context) => CourseSchedulePage(
+                                        _scholarController
+                                            .selectedSemester
+                                            .name,
+                                        false,
+                                      ),
+                                      title: '课表',
+                                    ),
                                   ),
-                                  title: '课表',
-                                ),
-                              ),
                               title:
                                   '${_scholarController.selectedSemester.secondHalfName}学期课时',
                               content:
                                   '${_scholarController.selectedSemester.secondHalfSessionCount}节/两周',
                               backgroundColor:
                                   _scholarController.selectedSemester.name[9] ==
-                                          '春'
-                                      ? CustomCupertinoDynamicColors.summer
-                                      : CustomCupertinoDynamicColors.winter,
+                                      '春'
+                                  ? CustomCupertinoDynamicColors.summer
+                                  : CustomCupertinoDynamicColors.winter,
                               withColoredFont: true,
                             ),
                           ),
@@ -613,95 +592,33 @@ class ScholarPage extends StatelessWidget {
   }
 
   Widget _buildTodos(BuildContext context) {
-    return RoundRectangleCard(
+    return Padding(
       padding: const EdgeInsets.all(0),
       child: Column(
         children: [
           Row(
             children: [
               Expanded(
-                child: RoundRectangleCardWithForehead(
+                child: _ScholarSection(
                   animate: false,
-                  foreheadColor: CustomCupertinoDynamicColors.magenta.darkColor
-                      .withValues(alpha: 0.25),
-                  forehead: Obx(
-                    () => Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 12,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Icon(
-                            Icons.check_circle_rounded,
-                            color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
-                            size: 18,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 6,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Text(
-                            '作业',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 4),
-                          child: Icon(
-                            _scholarController.durationToLastUpdateHomework
-                                        .inMinutes <
-                                    5
-                                ? CupertinoIcons.check_mark_circled_solid
-                                : CupertinoIcons.exclamationmark_circle_fill,
-                            color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
-                            size: 14,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 4,
-                            top: 4,
-                            bottom: 4,
-                            right: 16,
-                          ),
-                          child: Text(
-                            _scholarController.durationToLastUpdateHomework
-                                        .inMinutes >
-                                    10000000
-                                ? '获取数据时遇到问题'
-                                : '更新于 ${_scholarController.durationToLastUpdateHomework.inMinutes} 分钟前',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  header: Obx(
+                    () => _ScholarSectionHeader(
+                      title: '作业',
+                      icon: Icons.check_circle_rounded,
+                      status:
+                          _scholarController
+                                  .durationToLastUpdateHomework
+                                  .inMinutes >
+                              10000000
+                          ? '获取数据时遇到问题'
+                          : '更新于 ${_scholarController.durationToLastUpdateHomework.inMinutes} 分钟前',
+                      statusIcon:
+                          _scholarController
+                                  .durationToLastUpdateHomework
+                                  .inMinutes <
+                              5
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.exclamationmark_circle_fill,
                     ),
                   ),
                   child: Column(
@@ -746,7 +663,10 @@ class ScholarPage extends StatelessWidget {
                       const SizedBox(height: 16),
                       if (_scholarController.todos.isNotEmpty)
                         SizedBox(
-                          height: 102,
+                          height:
+                              102 *
+                              (MediaQuery.textScalerOf(context).scale(12) / 12)
+                                  .clamp(1.0, double.infinity),
                           child: _mouseDraggable(
                             context,
                             ListView.separated(
@@ -776,89 +696,23 @@ class ScholarPage extends StatelessWidget {
   }
 
   Widget _buildPractice(BuildContext context) {
-    return RoundRectangleCard(
+    return Padding(
       padding: const EdgeInsets.all(0),
       child: Column(
         children: [
           Row(
             children: [
               Expanded(
-                child: RoundRectangleCardWithForehead(
+                child: _ScholarSection(
                   animate: false,
-                  foreheadColor: CustomCupertinoDynamicColors.peach.darkColor
-                      .withValues(alpha: 0.25),
-                  forehead: Obx(
-                    () => Row(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 12,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Icon(
-                            Icons.star_rounded,
-                            color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.label,
-                              context,
-                            ),
-                            size: 18,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 6,
-                            top: 6,
-                            bottom: 6,
-                          ),
-                          child: Text(
-                            '实践',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              overflow: TextOverflow.ellipsis,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        if (!_scholarController.scholar.isPracticeScoresGet)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 4),
-                            child: Icon(
-                              CupertinoIcons.exclamationmark_circle_fill,
-                              color: CupertinoDynamicColor.resolve(
-                                CupertinoColors.label,
-                                context,
-                              ),
-                              size: 14,
-                            ),
-                          ),
-                        if (!_scholarController.scholar.isPracticeScoresGet)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 4,
-                              top: 4,
-                              bottom: 4,
-                              right: 16,
-                            ),
-                            child: Text(
-                              '获取实践记点时遇到问题',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                overflow: TextOverflow.ellipsis,
-                                color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.label,
-                                  context,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
+                  header: Obx(
+                    () => _ScholarSectionHeader(
+                      title: '实践',
+                      icon: Icons.star_rounded,
+                      status: _scholarController.scholar.isPracticeScoresGet
+                          ? null
+                          : '获取实践记点时遇到问题',
+                      statusIcon: CupertinoIcons.exclamationmark_circle_fill,
                     ),
                   ),
                   child: Column(
@@ -964,38 +818,38 @@ class ScholarPage extends StatelessWidget {
                             valueListenable: _isRefreshing,
                             builder: (context, isRefreshing, child) =>
                                 CupertinoButton(
-                              onPressed: isRefreshing
-                                  ? null
-                                  : () async {
-                                      _isRefreshing.value = true;
-                                      late final List<String?> results;
-                                      try {
-                                        results = await _scholarController
-                                            .fetchData();
-                                      } finally {
-                                        _isRefreshing.value = false;
-                                      }
-                                      if (context.mounted &&
-                                          results.any(
-                                            (result) => result != null,
-                                          )) {
-                                        await showRefreshResultDialog(
-                                          context,
-                                          results,
-                                        );
-                                      }
-                                    },
-                              child: isRefreshing
-                                  ? const CupertinoActivityIndicator()
-                                  : Icon(
-                                      CupertinoIcons.refresh,
-                                      color: CupertinoDynamicColor.resolve(
-                                        CupertinoColors.systemBlue,
-                                        context,
-                                      ),
-                                      size: 20,
-                                    ),
-                            ),
+                                  onPressed: isRefreshing
+                                      ? null
+                                      : () async {
+                                          _isRefreshing.value = true;
+                                          late final List<String?> results;
+                                          try {
+                                            results = await _scholarController
+                                                .fetchData();
+                                          } finally {
+                                            _isRefreshing.value = false;
+                                          }
+                                          if (context.mounted &&
+                                              results.any(
+                                                (result) => result != null,
+                                              )) {
+                                            await showRefreshResultDialog(
+                                              context,
+                                              results,
+                                            );
+                                          }
+                                        },
+                                  child: isRefreshing
+                                      ? const CupertinoActivityIndicator()
+                                      : Icon(
+                                          CupertinoIcons.refresh,
+                                          color: CupertinoDynamicColor.resolve(
+                                            CupertinoColors.systemBlue,
+                                            context,
+                                          ),
+                                          size: 20,
+                                        ),
+                                ),
                           ),
                       ],
                     ),
@@ -1023,18 +877,24 @@ class ScholarPage extends StatelessWidget {
                                                 '${semester.name.substring(2, 5)}${semester.name.substring(7, 11)}',
                                             onTap: () {
                                               _scholarController
-                                                  .semesterIndex.value = index;
+                                                      .semesterIndex
+                                                      .value =
+                                                  index;
                                               _scholarController.semesterIndex
                                                   .refresh();
                                             },
-                                            selected: _scholarController
-                                                    .semesterIndex.value ==
+                                            selected:
+                                                _scholarController
+                                                    .semesterIndex
+                                                    .value ==
                                                 index,
-                                            backgroundColor: _scholarController
-                                                        .semesterIndex.value ==
+                                            backgroundColor:
+                                                _scholarController
+                                                        .semesterIndex
+                                                        .value ==
                                                     index
                                                 ? CustomCupertinoDynamicColors
-                                                    .cyan
+                                                      .cyan
                                                 : CupertinoColors.systemFill,
                                           ),
                                         ),
@@ -1110,22 +970,22 @@ class ScholarPage extends StatelessWidget {
               // 复刻原生转圈，刷新超过 5 秒后在其右侧滚动展示状态文案。
               // Obx 是必需的：刷新驻留期间 sliver 高度不变、builder 不会被重调，
               // 文案更新只能靠响应式重建
-              builder: (
-                context,
-                refreshState,
-                pulledExtent,
-                refreshTriggerPullDistance,
-                refreshIndicatorExtent,
-              ) =>
-                  Obx(
-                () => RefreshStatusIndicator(
-                  refreshState: refreshState,
-                  pulledExtent: pulledExtent,
-                  refreshTriggerPullDistance: refreshTriggerPullDistance,
-                  refreshIndicatorExtent: refreshIndicatorExtent,
-                  message: _scholarController.refreshStatusMessage.value,
-                ),
-              ),
+              builder:
+                  (
+                    context,
+                    refreshState,
+                    pulledExtent,
+                    refreshTriggerPullDistance,
+                    refreshIndicatorExtent,
+                  ) => Obx(
+                    () => RefreshStatusIndicator(
+                      refreshState: refreshState,
+                      pulledExtent: pulledExtent,
+                      refreshTriggerPullDistance: refreshTriggerPullDistance,
+                      refreshIndicatorExtent: refreshIndicatorExtent,
+                      message: _scholarController.refreshStatusMessage.value,
+                    ),
+                  ),
               onRefresh: () async {
                 final results = await _scholarController.fetchData();
                 if (context.mounted &&

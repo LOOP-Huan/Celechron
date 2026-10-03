@@ -3,28 +3,28 @@ name: Publish stable Android release
 on:
   push:
     branches:
-      - release/liquid-glass-v1.4.0
+      - release/scholar-ui-v1.4.1
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: celechron-stable-v1.4.0
+  group: celechron-stable-v1.4.1
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/release/liquid-glass-v1.4.0'
+    if: github.ref == 'refs/heads/release/scholar-ui-v1.4.1'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v1.4.0
-      RELEASE_TITLE: Celechron 1.4.0
-      APK_NAME: celechron-v1.4.0-universal.apk
-      APP_VERSION: 1.4.0
-      APP_BUILD_NUMBER: '13'
+      RELEASE_TAG: v1.4.1
+      RELEASE_TITLE: Celechron 1.4.1
+      APK_NAME: celechron-v1.4.1-universal.apk
+      APP_VERSION: 1.4.1
+      APP_BUILD_NUMBER: '14'
       ANDROID_SIGNING_SHA256: a7634b405b936d84326d368842beee9cac78ab17090dfec6d7363f07ae4fd546
 
     steps:
@@ -250,7 +250,7 @@ jobs:
         if: steps.apk.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: celechron-v1.4.0-apk
+          name: celechron-v1.4.1-apk
           path: |
             ${{ steps.apk.outputs.release_dir }}/${{ env.APK_NAME }}
             ${{ steps.apk.outputs.release_dir }}/SHA256SUMS
@@ -265,17 +265,17 @@ jobs:
           release_dir="$RUNNER_TEMP/celechron-stable-assets"
           notes_file="$RUNNER_TEMP/celechron-stable-release-notes.md"
           cat > "$notes_file" <<'NOTES'
-          Celechron 1.4.0 正式版：优化液态玻璃渲染，保留实时折射、轻微连续模糊及清晰的前景文字。
+          Celechron 1.4.1 正式版：学业页的成绩、课程、作业、实践分组采用与设置页一致的简洁样式。
 
-          玻璃平坦内区跳过不影响输出的边缘梯度与折射曲面计算；位置、尺寸及光学参数不变时复用滤镜对象。背景内容仍实时刷新，保留原有边缘光学效果、双线性采样和连续高斯滤波。优化前后的原生渲染对照用于检查画面一致性，不以桌面测试推断手机帧率或功耗。
+          去掉分组外围叠加的玻璃底色，标题和更新时间直接显示在页面背景上，正文保留单层玻璃面板及原有内容卡片。窄屏和大字号下的状态文字可换行，作业卡片高度随字号调整；保留成绩详情、课程列表和实践详情的入口与转场。
 
-          包含应用背景图片自定义和图书馆座位/研讨间预约，保留预约可用优先排序、楼层数量统计及取消/结束功能。定时预约仍未启用；本次不改变登录凭据、预约请求或 Android 权限。
+          继续支持自定义应用背景、液态玻璃效果以及图书馆座位/研讨间预约。本次仅调整学业页布局，不改变登录凭据、预约请求或 Android 权限。
 
-          APK 由本标签对应的源码在 GitHub Actions 构建，完整自动测试通过，版本、固定签名及 SHA-256 已校验。手机上的实际效果和性能取决于设备及渲染器；不支持实时折射时使用透明模糊回退。
+          APK 由本标签对应的源码在 GitHub Actions 构建，完整自动测试通过，版本、固定签名及 SHA-256 已校验。学业页已完成本地原生渲染检查，覆盖明暗主题、窄屏大字号和主要详情页跳转。
 
-          **安装须知：**支持 Android 9 及以上。单个通用 APK 包含 arm64-v8a、armeabi-v7a、x86_64，无需分卷。从本版开始使用新的固定正式签名；旧正式版及此前所有预览版均不能直接覆盖安装，请先导出需保留的数据再卸载安装，卸载会清除本地数据。之后使用同一证书发布的新版可正常覆盖升级。
+          **安装须知：**支持 Android 9 及以上。单个通用 APK 包含 arm64-v8a、armeabi-v7a、x86_64，无需分卷。沿用 1.4.0 的固定正式签名，可直接覆盖安装 1.4.0 并保留本地数据。1.4.0 之前使用不同签名的正式版及预览版需先导出需要保留的数据，再卸载安装；卸载会清除本地数据。
 
-          版本：1.4.0+13。SHA256SUMS 可用于校验下载结果，BUILD_INFO.json 记录源码提交、版本和公开证书指纹。
+          版本：1.4.1+14。SHA256SUMS 可用于校验下载结果，BUILD_INFO.json 记录源码提交、版本和公开证书指纹。
           NOTES
           printf '\n源码提交：`%s`\n\n<!-- celechron-stable-source:%s -->\n' "$GITHUB_SHA" "$GITHUB_SHA" >> "$notes_file"
           # Recheck the remote tag immediately before publishing so a tag
