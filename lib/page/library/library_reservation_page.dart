@@ -60,7 +60,7 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
   bool _busy = false;
   bool _isPublic = true;
   bool _submissionUncertain = false;
-  final Set<String> _uncertainCancellations = {};
+  final Map<String, String> _uncertainReservationActions = {};
 
   @override
   void initState() {
@@ -635,31 +635,53 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
     if (refreshReservations && mounted) await _loadReservations();
   }
 
-  Future<void> _cancel(LibraryReservation reservation) async {
-    if (_busy || !_checkAccount()) return;
+  Future<void> _cancel(LibraryReservation reservation) =>
+      _changeReservation(reservation, ending: false);
+
+  Future<void> _endUse(LibraryReservation reservation) =>
+      _changeReservation(reservation, ending: true);
+
+  Future<void> _changeReservation(LibraryReservation reservation,
+      {required bool ending}) async {
+    if (_busy ||
+        _uncertainReservationActions.containsKey(reservation.id) ||
+        (ending
+            ? !reservation.canEnd
+            : !reservation.canCancel || reservation.canEnd) ||
+        !_checkAccount()) {
+      return;
+    }
+    final action = ending ? '结束' : '取消';
     var refreshReservations = false;
     setState(() => _busy = true);
     try {
+      final detail = '${reservation.roomName}\n${reservation.date} '
+          '${reservation.startTime}–${reservation.endTime}';
       final confirmed = await _confirm(
-        '取消这条预约？',
-        '${reservation.roomName}\n${reservation.date} '
-            '${reservation.startTime}–${reservation.endTime}',
-        '确认取消',
+        ending ? '结束使用这个研讨间？' : '取消这条预约？',
+        ending
+            ? '$detail\n确认后将结束本次研讨间使用。'
+            : '$detail${reservation.cancellationWarning.isEmpty ? '' : '\n${reservation.cancellationWarning}'}',
+        ending ? '确认结束' : '确认取消',
         destructive: true,
       );
       if (!confirmed || !_checkAccount()) return;
-      final message = await _client!.cancel(reservation);
+      final message = ending
+          ? await _client!.endUse(reservation)
+          : await _client!.cancel(reservation);
       if (!_checkAccount()) return;
       refreshReservations = true;
-      await _message('预约已取消', message.isEmpty ? '预约状态将自动更新。' : message);
+      await _message(
+          ending ? '已结束使用' : '预约已取消', message.isEmpty ? '预约状态将自动更新。' : message);
     } on Object catch (error) {
       if (!_checkAccount()) return;
       if (error is LibraryBookingException && error.outcomeUnknown) {
-        setState(() => _uncertainCancellations.add(reservation.id));
+        setState(() => _uncertainReservationActions[reservation.id] = action);
         refreshReservations = true;
-        await _message('取消结果待确认', '未能确认本次取消结果。请刷新「我的预约」查看最新状态，不要重复提交。');
+        await _message(
+            '$action结果待确认', '未能确认本次$action结果。请刷新「我的预约」查看最新状态，不要重复提交。');
       } else {
-        await _message('取消未完成', _errorMessage(error));
+        await _message('$action未完成', _errorMessage(error));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1126,8 +1148,18 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                 '${reservation.startTime}–${reservation.endTime}'),
             const SizedBox(height: 8),
             Text(reservation.status),
-            if (_uncertainCancellations.contains(reservation.id))
-              _note('取消结果待确认，请刷新查看最新状态。')
+            if (_uncertainReservationActions.containsKey(reservation.id))
+              _note(
+                  '${_uncertainReservationActions[reservation.id]}结果待确认，请刷新查看最新状态。')
+            else if (reservation.canEnd)
+              CupertinoButton(
+                key: ValueKey('library-end-${reservation.id}'),
+                onPressed: _busy ? null : () => _endUse(reservation),
+                child: Text('结束使用',
+                    style: TextStyle(
+                        color: CupertinoDynamicColor.resolve(
+                            CupertinoColors.systemRed, context))),
+              )
             else if (reservation.canCancel)
               CupertinoButton(
                 key: ValueKey('library-cancel-${reservation.id}'),
@@ -1137,8 +1169,11 @@ class _LibraryReservationPageState extends State<LibraryReservationPage> {
                         color: CupertinoDynamicColor.resolve(
                             CupertinoColors.systemRed, context))),
               )
-            else if (reservation.cancellationReason?.isNotEmpty ?? false)
-              _note(reservation.cancellationReason!),
+            else if ((reservation.cancellationReason?.isNotEmpty ?? false) ||
+                (reservation.endReason?.isNotEmpty ?? false))
+              _note(reservation.cancellationReason?.isNotEmpty == true
+                  ? reservation.cancellationReason!
+                  : reservation.endReason!),
           ]),
         if (_reservations.isNotEmpty && _hasMore)
           CupertinoButton(

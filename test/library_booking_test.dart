@@ -31,6 +31,7 @@ LibraryRoomAvailability _availability({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   _roomSchemaTests();
+  _roomActionTests();
   _seatBookingTests();
 
   test('预约加密与独立 OpenSSL AES-CBC 向量一致，使用上海日期', () {
@@ -98,6 +99,7 @@ void main() {
       expect(request.json['limit'], 10);
       return _reservationResponse();
     });
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
     final reservations = await service.loadReservations();
@@ -115,6 +117,7 @@ void main() {
       expect(request.headers.value('authorization'), 'bearerfake-token');
       return _reservationResponse();
     });
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
 
@@ -130,6 +133,7 @@ void main() {
         h5Callback: '/h5/index.html#/cas?cas=fake-exchange-code');
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
     await service.loadReservations();
@@ -146,7 +150,7 @@ void main() {
     }
     final apiRequests =
         client.requests.where((request) => request.method == 'POST');
-    expect(apiRequests, hasLength(2));
+    expect(apiRequests, hasLength(3));
     for (final request in apiRequests) {
       expect(request.headers.value('x-requested-with'), 'XMLHttpRequest');
       expect(request.headers.value('accept'), 'application/json');
@@ -162,6 +166,7 @@ void main() {
         cleanTicketRedirect: true);
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
 
@@ -336,6 +341,7 @@ void main() {
                 ],
               },
             }));
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
     final reservations = await service.loadReservations();
@@ -361,6 +367,7 @@ void main() {
       expect(request.headers.value('authorization'), 'bearersecond-token');
       return _reservationResponse();
     });
+    _expectRoomCurrent(client, token: 'second-token');
     var authentications = 0;
     final service = _service(client, onAuthenticate: () => authentications++);
     addTearDown(service.dispose);
@@ -393,6 +400,8 @@ void main() {
     _expectLogin(client);
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
+    _expectRoomCurrent(client, rows: [_activeRoomJson()]);
     client.expectRequest('POST', '/api/space/seminarCancel', (_) {
       throw TimeoutException('Fake transport timeout');
     });
@@ -416,6 +425,8 @@ void main() {
     _expectLogin(client);
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
+    _expectRoomCurrent(client, rows: [_activeRoomJson()]);
     client.expectRequest(
         'POST',
         '/api/space/seminarCancel',
@@ -442,6 +453,8 @@ void main() {
     _expectLogin(client);
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
+    _expectRoomCurrent(client, rows: [_activeRoomJson()]);
     final pending = Completer<HttpClientResponse>();
     client.expectRequest(
         'POST', '/api/space/seminarCancel', (_) => pending.future);
@@ -557,6 +570,434 @@ void main() {
     expect(client.requests, hasLength(1));
     await expectLater(
         service.loadReservations(), throwsA(isA<LibraryBookingException>()));
+  });
+}
+
+void _roomActionTests() {
+  group('研讨间历史记录使用官网当前预约权限', () {
+    test('只合并同类型同预约，按提前预约、使用中、取消标志的顺序判定动作', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, rows: [
+        _reservationJson(id: 'early', booker: '999', status: 4, oksign: 0),
+        _reservationJson(id: 'using'),
+        _reservationJson(id: '123', status: 4, oksign: 0),
+        _reservationJson(id: 'denied'),
+        _reservationJson(id: 'missing'),
+      ], active: [
+        _activeRoomJson(id: 'early', earlierPeriods: '2', status: 3, oksign: 0),
+        _activeRoomJson(id: 'using', status: 3, oksign: 1),
+        _activeRoomJson(id: 123, type: 2, status: 4),
+        _activeRoomJson(id: 'denied', oksign: 0),
+        _activeRoomJson(id: 'missing', oksign: null),
+        _activeRoomJson(id: 'current-only'),
+      ]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final records = await service.loadReservations();
+      expect(records.map((record) => record.id),
+          ['early', 'using', '123', 'denied', 'missing']);
+      expect(records.map((record) => record.canCancel),
+          [true, false, true, false, false]);
+      expect(records.map((record) => record.canEnd),
+          [false, true, false, false, false]);
+      expect(records[1].status, '使用中');
+      expect(client.steps, isEmpty);
+    });
+
+    for (final mismatch in {
+      '座位类型的相同预约号': [_activeRoomJson(type: '1')],
+      '物理房间号相同而预约号不同': [
+        _activeRoomJson(id: 'other-booking', areaId: 'booking-1')
+      ],
+      '当前列表没有该预约': <Map<String, dynamic>>[],
+    }.entries) {
+      test('${mismatch.key}不能授予研讨间结束或取消权限', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client,
+            rows: [_reservationJson(status: 4, oksign: 0)],
+            active: mismatch.value);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations()).single;
+        expect(record.canCancel, isFalse);
+        expect(record.canEnd, isFalse);
+        await expectLater(
+            service.cancel(record), throwsA(isA<LibraryBookingException>()));
+        await expectLater(
+            service.endUse(record), throwsA(isA<LibraryBookingException>()));
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    for (final conflict in {
+      '动作冲突': [_activeRoomJson(), _activeRoomJson(status: 3)],
+      '取消提示冲突': [
+        _activeRoomJson(warning: '规则一'),
+        _activeRoomJson(warning: '规则二'),
+      ],
+    }.entries) {
+      test('同一当前预约${conflict.key}时不授予任何动作', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client, active: conflict.value);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations()).single;
+        expect(record.canCancel, isFalse);
+        expect(record.canEnd, isFalse);
+        expect(record.cancellationReason, contains('冲突'));
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('当前权限查询失败保留历史，但不沿用历史取消或结束能力', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomHistory(client);
+      _expectRoomCurrent(client,
+          response: (_) => _Response.json({'code': 0, 'msg': '暂不可用'}));
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      expect(record.roomName, '测试研讨间');
+      expect(record.canCancel, isFalse);
+      expect(record.canEnd, isFalse);
+      expect(record.cancellationReason, contains('无法核实'));
+      expect(record.endReason, contains('无法核实'));
+      expect(client.steps, isEmpty);
+    });
+
+    test('历史查询失败正常抛出，不以当前预约代替历史列表', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomHistory(client,
+          response: (_) => _Response.json({'code': 0, 'msg': '历史暂不可用'}));
+      final service = _service(client);
+      addTearDown(service.dispose);
+      await expectLater(
+          service.loadReservations(), throwsA(isA<LibraryBookingException>()));
+      expect(client.steps, isEmpty);
+    });
+
+    test('当前允许取消可覆盖旧历史状态，写前重查并提交预约编号', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client,
+          rows: [_reservationJson(booker: '999', status: 4, oksign: 0)],
+          active: [_activeRoomJson()]);
+      _expectRoomCurrent(client, rows: [_activeRoomJson()]);
+      _expectRoomMutation(client, ending: false);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      expect(await service.cancel(record), '预约已取消');
+      expect(client.steps, isEmpty);
+    });
+
+    test('结束使用只向 signout 发送未加密预约编号并接受 code 0', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      _expectRoomMutation(client, ending: true);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      expect(record.canEnd, isTrue);
+      expect(record.canCancel, isFalse);
+      expect(await service.endUse(record), '已结束使用');
+      expect(client.steps, isEmpty);
+    });
+
+    test('结束接口的 code 1 不能误判为结束成功', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      _expectRoomMutation(client,
+          ending: true,
+          response: (_) => _Response.json({'code': 1, 'msg': '结束失败'}));
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      await expectLater(
+          service.endUse(record), throwsA(isA<LibraryBookingException>()));
+      expect(client.steps, isEmpty);
+    });
+
+    for (final ending in [false, true]) {
+      test('${ending ? '结束' : '取消'}预检发现当前动作改变时禁止沿用旧按钮', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client,
+            active: [_activeRoomJson(status: ending ? 3 : 2)]);
+        _expectRoomCurrent(client,
+            rows: [_activeRoomJson(status: ending ? 2 : 3)]);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations()).single;
+        await expectLater(
+            ending ? service.endUse(record) : service.cancel(record),
+            throwsA(isA<LibraryBookingException>()));
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('结束预检找不到当前预约时不回退历史授予动作', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      _expectRoomCurrent(client);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      await expectLater(
+          service.endUse(record), throwsA(isA<LibraryBookingException>()));
+      expect(client.steps, isEmpty);
+    });
+
+    for (final state in {
+      '原发起人且成功且允许': _reservationJson(),
+      '他人发起': _reservationJson(booker: '999'),
+      '已结束': _reservationJson(status: 4),
+      '已不可取消': _reservationJson(oksign: 0),
+    }.entries) {
+      test('取消无当前匹配时重查原历史页：${state.key}', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client, page: 2);
+        _expectRoomCurrent(client);
+        _expectRoomHistory(client, page: 2, rows: [state.value]);
+        final allowed = state.key == '原发起人且成功且允许';
+        if (allowed) _expectRoomMutation(client, ending: false);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations(page: 2)).single;
+        if (allowed) {
+          expect(await service.cancel(record), '预约已取消');
+        } else {
+          await expectLater(
+              service.cancel(record), throwsA(isA<LibraryBookingException>()));
+        }
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    for (final warning in ['相同', '新增', '改变']) {
+      test('取消特殊提示$warning时要求确认对应的最新提示', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client, active: [
+          _activeRoomJson(warning: warning == '新增' ? null : '<p>原规则。</p>')
+        ]);
+        _expectRoomCurrent(client, rows: [
+          _activeRoomJson(
+              warning: warning == '相同' ? '<p>原规则。</p>' : '<p>新规则。</p>')
+        ]);
+        if (warning == '相同') _expectRoomMutation(client, ending: false);
+        final service = _service(client);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations()).single;
+        expect(record.cancellationWarning, warning == '新增' ? '' : '原规则。');
+        if (warning == '相同') {
+          expect(await service.cancel(record), '预约已取消');
+        } else {
+          await expectLater(
+              service.cancel(record), throwsA(isA<LibraryBookingException>()));
+        }
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('预检重复预约动作冲突时禁止写入', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson()]);
+      _expectRoomCurrent(client,
+          rows: [_activeRoomJson(), _activeRoomJson(status: 3)]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      await expectLater(
+          service.cancel(record), throwsA(isA<LibraryBookingException>()));
+      expect(client.steps, isEmpty);
+    });
+
+    for (final accountChanges in [false, true]) {
+      test(accountChanges ? '结束预检期间账号失效不能写入' : '结束预检期间拒绝第二个写操作', () async {
+        final client = _Client();
+        _expectLogin(client);
+        _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+        final pending = Completer<HttpClientResponse>();
+        final started = Completer<void>();
+        _expectRoomCurrent(client, response: (_) {
+          started.complete();
+          return pending.future;
+        });
+        if (!accountChanges) _expectRoomMutation(client, ending: true);
+        var accountActive = true;
+        final service = _service(client, canUseSession: () => accountActive);
+        addTearDown(service.dispose);
+        final record = (await service.loadReservations()).single;
+        final first = service.endUse(record);
+        final assertion = accountChanges
+            ? expectLater(first, throwsA(isA<LibraryBookingException>()))
+            : null;
+        await started.future;
+        if (accountChanges) {
+          accountActive = false;
+        } else {
+          await expectLater(
+              service.endUse(record), throwsA(isA<LibraryBookingException>()));
+        }
+        pending.complete(_Response.json({
+          'code': 1,
+          'data': [_activeRoomJson(status: 3)]
+        }));
+        if (assertion != null) {
+          await assertion;
+        } else {
+          expect(await first, '已结束使用');
+        }
+        expect(client.steps, isEmpty);
+      });
+    }
+
+    test('结束超时只写一次，失败的当前查询或第二页刷新都不能清除未知锁', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      _expectRoomMutation(client, ending: true, response: (_) {
+        throw TimeoutException('Fake signout timeout');
+      });
+      _expectRoomHistory(client);
+      _expectRoomCurrent(client,
+          response: (_) => _Response.json({'code': 0, 'msg': '暂不可用'}));
+      _expectRoomRecords(client, page: 2, active: [_activeRoomJson(status: 3)]);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      _expectRoomMutation(client, ending: true);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      final unverifiable = (await service.loadReservations()).single;
+      expect(unverifiable.canEnd, isFalse);
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      await service.loadReservations(page: 2);
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      final fresh = (await service.loadReservations()).single;
+      expect(await service.endUse(fresh), '已结束使用');
+      expect(
+          client.requests.where(
+              (request) => request.uri.path == '/reserve/seminar/signout'),
+          hasLength(2));
+      expect(client.steps, isEmpty);
+    });
+
+    test('未知结束结果前发起的历史读取晚到不能解除新写锁', () async {
+      final client = _Client();
+      _expectLogin(client);
+      _expectRoomRecords(client, active: [_activeRoomJson(status: 3)]);
+      final started = Completer<void>();
+      final pending = Completer<HttpClientResponse>();
+      _expectRoomHistory(client, response: (_) {
+        started.complete();
+        return pending.future;
+      });
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      _expectRoomMutation(client, ending: true, response: (_) {
+        throw TimeoutException('Fake signout timeout');
+      });
+      _expectRoomCurrent(client, rows: [_activeRoomJson(status: 3)]);
+      final service = _service(client);
+      addTearDown(service.dispose);
+      final record = (await service.loadReservations()).single;
+      final stale = service.loadReservations();
+      await started.future;
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      pending.complete(_reservationResponse());
+      await stale;
+      await expectLater(service.endUse(record), _unknownBookingOutcome);
+      expect(client.steps, isEmpty);
+    });
+  });
+}
+
+void _expectRoomRecords(
+  _Client client, {
+  List<Map<String, dynamic>>? rows,
+  List<Map<String, dynamic>> active = const [],
+  int page = 1,
+}) {
+  _expectRoomHistory(client, rows: rows, page: page);
+  _expectRoomCurrent(client, rows: active);
+}
+
+void _expectRoomHistory(
+  _Client client, {
+  List<Map<String, dynamic>>? rows,
+  int page = 1,
+  _ResponseFactory? response,
+}) {
+  client.expectRequest('POST', '/api/Member/seminar', (request) {
+    expect(request.json,
+        {'page': page, 'limit': 10, 'authorization': 'bearerfake-token'});
+    return response?.call(request) ?? _reservationResponse(rows: rows);
+  });
+}
+
+void _expectRoomCurrent(
+  _Client client, {
+  List<Map<String, dynamic>> rows = const [],
+  _ResponseFactory? response,
+  String token = 'fake-token',
+}) {
+  client.expectRequest('POST', '/api/index/subscribe', (request) {
+    expect(request.json, {'authorization': 'bearer$token'});
+    expect(request.headers.value('authorization'), 'bearer$token');
+    return response?.call(request) ?? _Response.json({'code': 1, 'data': rows});
+  });
+}
+
+Map<String, dynamic> _activeRoomJson({
+  Object id = 'booking-1',
+  Object type = '2',
+  String areaId = 'physical-room-9',
+  Object earlierPeriods = 0,
+  int status = 2,
+  int? oksign = 1,
+  String? warning,
+}) =>
+    {
+      'id': id,
+      'type': type,
+      'area_id': areaId,
+      'earlierPeriods': earlierPeriods,
+      'status': status,
+      if (oksign != null) 'oksign': oksign,
+      'nameMerge': '测试图书馆 三层',
+      'name': '讨论室 9',
+      'showTime': '10月3日 08:00-09:00',
+      if (warning != null) 'only_cancel': 1,
+      if (warning != null) 'only_cancel_text': warning,
+    };
+
+void _expectRoomMutation(_Client client,
+    {required bool ending, _ResponseFactory? response}) {
+  client.expectRequest(
+      'POST', ending ? '/reserve/seminar/signout' : '/api/space/seminarCancel',
+      (request) {
+    expect(
+        request.json, {'id': 'booking-1', 'authorization': 'bearerfake-token'});
+    expect(request.headers.value('authorization'), 'bearerfake-token');
+    return response?.call(request) ??
+        _Response.json(
+            {'code': ending ? 0 : 1, 'msg': ending ? '已结束使用' : '预约已取消'});
   });
 }
 
@@ -1323,6 +1764,7 @@ void _seatMutationTests() {
     });
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
     final service = _service(client);
     addTearDown(service.dispose);
     final record = (await service.loadSeatReservations()).single;
@@ -1337,6 +1779,8 @@ void _seatMutationTests() {
     _expectLogin(client);
     client.expectRequest(
         'POST', '/api/Member/seminar', (_) => _reservationResponse());
+    _expectRoomCurrent(client);
+    _expectRoomCurrent(client, rows: [_activeRoomJson()]);
     client.expectRequest('POST', '/api/space/seminarCancel', (_) {
       throw TimeoutException('Fake room cancellation timeout');
     });
@@ -1920,11 +2364,12 @@ Map<String, dynamic> _reservationJson({
       'oksign': oksign,
     };
 
-_Response _reservationResponse() => _Response.json({
+_Response _reservationResponse({List<Map<String, dynamic>>? rows}) =>
+    _Response.json({
       'code': 1,
       'data': {
-        'data': [_reservationJson()],
-        'total': 1
+        'data': rows ?? [_reservationJson()],
+        'total': rows?.length ?? 1
       },
     });
 

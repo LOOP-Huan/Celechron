@@ -19,6 +19,7 @@ abstract class LibraryBookingClient {
   Future<String> submit(LibraryBookingDraft draft);
   Future<List<LibraryReservation>> loadReservations({int page = 1});
   Future<String> cancel(LibraryReservation reservation);
+  Future<String> endUse(LibraryReservation reservation);
   void dispose();
 }
 
@@ -207,6 +208,9 @@ class LibraryReservation {
   final String status;
   final bool canCancel;
   final String? cancellationReason;
+  final bool canEnd;
+  final String? endReason;
+  final String cancellationWarning;
 
   const LibraryReservation({
     required this.id,
@@ -217,6 +221,9 @@ class LibraryReservation {
     required this.status,
     this.canCancel = false,
     this.cancellationReason,
+    this.canEnd = false,
+    this.endReason,
+    this.cancellationWarning = '',
   });
 }
 

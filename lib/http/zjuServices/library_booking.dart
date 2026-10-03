@@ -84,6 +84,21 @@ class _SeatCancellationPermission {
   const _SeatCancellationPermission(this.allowed, this.warning);
 }
 
+enum _SeminarAction { none, cancel, endUse }
+
+class _SeminarCurrentPermission {
+  final _SeminarAction action;
+  final String warning;
+  final String status;
+  final bool conflicting;
+
+  const _SeminarCurrentPermission(this.action, this.warning, this.status,
+      {this.conflicting = false});
+
+  bool get canCancel => !conflicting && action == _SeminarAction.cancel;
+  bool get canEnd => !conflicting && action == _SeminarAction.endUse;
+}
+
 /// An account-scoped session for booking.lib.zju.edu.cn, deliberately separate
 /// from the academic clients. Tokens, cookies and member data are never saved.
 /// Only read operations may retry after explicit authentication expiry.
@@ -108,6 +123,7 @@ class LibraryBookingService
   final Duration requestTimeout;
   final List<_StoredCookie> _cookies = [];
   final Map<String, int> _seatReservationPages = {};
+  final Map<String, int> _seminarReservationPages = {};
   Future<void>? _loginFuture;
   String? _token;
   String _memberId = '';
@@ -162,6 +178,7 @@ class LibraryBookingService
     _password = '';
     _cookies.clear();
     _seatReservationPages.clear();
+    _seminarReservationPages.clear();
     _serverClockOffset = null;
     ZjuAm.clearClientSsoCookie(_httpClient, _username);
     _httpClient.close(force: true);
@@ -795,6 +812,7 @@ class LibraryBookingService
 
   Future<String> _write(String path, Map<String, dynamic> body,
       {bool encrypted = false,
+      int successCode = 1,
       _LibraryWriteDomain domain = _LibraryWriteDomain.seminar,
       required String fallbackMessage}) async {
     _checkActive();
@@ -806,8 +824,8 @@ class LibraryBookingService
     _writing = true;
     try {
       await _ensureAuthenticated();
-      final result =
-          await _postOnce(path, body, encrypted: encrypted, mutation: true);
+      final result = await _postOnce(path, body,
+          encrypted: encrypted, mutation: true, successCode: successCode);
       return _message(result, fallbackMessage);
     } on LibraryBookingException catch (error) {
       if (error.authenticationRequired) _token = null;
@@ -825,46 +843,187 @@ class LibraryBookingService
   @override
   Future<List<LibraryReservation>> loadReservations({int page = 1}) async {
     final uncertaintyVersion = _unresolvedMutationVersion;
-    final response =
-        await _read('/api/Member/seminar', {'page': page, 'limit': 10});
-    final data = _map(response['data']);
-    final reservations = _list(data['data']).map((value) {
-      final item = _map(value);
+    final history = await _readSeminarHistory(page);
+    Map<String, _SeminarCurrentPermission>? current;
+    try {
+      current = await _readSeminarCurrentPermissions();
+    } on LibraryBookingException catch (error) {
+      _checkActive();
+      if (error.authenticationRequired) rethrow;
+      // Keep historical rows visible when the current-card endpoint fails,
+      // but do not infer that its cancellation/end-use permissions still apply.
+    }
+    _checkActive();
+    final reservations = history.map((item) {
+      final id = _reservationId(item['id']);
+      _seminarReservationPages[id] = page;
       final own = _string(item['booker']) == _memberId;
-      final canCancel = _string(item['status']) == '2' &&
-          own &&
-          _string(item['oksign']) == '1';
+      final home = current?[id];
+      final canCancel = current != null &&
+          (home?.canCancel ?? _seminarHistoryAllowsCancel(item));
+      final canEnd = home?.canEnd ?? false;
+      final commonReason = current == null
+          ? '当前预约权限无法核实，请刷新后重试。'
+          : home?.conflicting == true
+              ? '当前预约状态存在冲突，请刷新或前往图书馆官网核实。'
+              : null;
       return LibraryReservation(
-        id: _requiredString(item['id']),
+        id: id,
         roomName: _string(item['nameMerge']),
         date: _string(item['day']),
         startTime: _string(item['start']),
         endTime: _string(item['end']),
-        status: _reservationStatus(item, own),
+        status: home?.status.isNotEmpty == true
+            ? home!.status
+            : _reservationStatus(item, own),
         canCancel: canCancel,
         cancellationReason: canCancel
             ? null
-            : own
-                ? '此预约当前不可取消；请以图书馆规定和预约状态为准。'
-                : '仅预约发起人可以取消。',
+            : commonReason ??
+                (canEnd
+                    ? '此预约正在使用中，请选择结束使用。'
+                    : home == null && !own
+                        ? '仅预约发起人可以取消。'
+                        : '此预约当前不可取消；请以图书馆规定和预约状态为准。'),
+        canEnd: canEnd,
+        endReason: canEnd ? null : commonReason ?? '此预约当前不能结束使用，请以图书馆当前预约状态为准。',
+        cancellationWarning: home?.warning ?? '',
       );
     }).toList();
-    _completeReservationRefresh(
-        _LibraryWriteDomain.seminar, uncertaintyVersion, page);
+    if (current != null) {
+      _completeReservationRefresh(
+          _LibraryWriteDomain.seminar, uncertaintyVersion, page);
+    }
     return reservations;
   }
 
+  Future<List<Map<String, dynamic>>> _readSeminarHistory(int page) async {
+    final response =
+        await _read('/api/Member/seminar', {'page': page, 'limit': 10});
+    return _list(_map(response['data'])['data'] ?? const []).map(_map).toList();
+  }
+
+  Future<Map<String, _SeminarCurrentPermission>>
+      _readSeminarCurrentPermissions() async {
+    final response = await _read('/api/index/subscribe', {});
+    final result = <String, _SeminarCurrentPermission>{};
+    for (final value in _list(response['data'])) {
+      final record = _map(value);
+      if (_string(record['type']).trim() != '2') continue;
+      // Only the booking ID is shared with history. area_id is a physical room.
+      final id = _reservationId(record['id']);
+      final earlierPeriods = num.tryParse(_string(record['earlierPeriods']));
+      final status = _string(record['status']).trim();
+      final action = earlierPeriods != null && earlierPeriods > 0
+          ? _SeminarAction.cancel
+          : status == '3'
+              ? _SeminarAction.endUse
+              : _binaryFlag(record['oksign']) == true
+                  ? _SeminarAction.cancel
+                  : _SeminarAction.none;
+      final warning = _binaryFlag(record['only_cancel']) == true
+          ? _plainText(_string(record['only_cancel_text']))
+          : '';
+      final label = _plainText(_string(record['statusname']));
+      final permission = _SeminarCurrentPermission(
+          action,
+          warning,
+          label.isNotEmpty
+              ? label
+              : status == '3'
+                  ? '使用中'
+                  : status == '2'
+                      ? '预约成功'
+                      : '');
+      final previous = result[id];
+      if (previous == null) {
+        result[id] = permission;
+      } else if (previous.conflicting ||
+          previous.action != permission.action ||
+          previous.warning != permission.warning) {
+        result[id] = const _SeminarCurrentPermission(
+            _SeminarAction.none, '', '状态待确认',
+            conflicting: true);
+      }
+    }
+    return result;
+  }
+
+  bool _seminarHistoryAllowsCancel(Map<String, dynamic> item) =>
+      _string(item['status']).trim() == '2' &&
+      _string(item['booker']) == _memberId &&
+      _binaryFlag(item['oksign']) == true;
+
+  static String _reservationId(dynamic value) {
+    final id = _requiredString(value).trim();
+    if (id.isEmpty) {
+      throw const LibraryBookingException('图书馆响应缺少预约编号，请在官网核实。');
+    }
+    return id;
+  }
+
   @override
-  Future<String> cancel(LibraryReservation reservation) async {
-    if (_preparingSubmission) {
+  Future<String> cancel(LibraryReservation reservation) =>
+      _performSeminarAction(reservation, ending: false);
+
+  @override
+  Future<String> endUse(LibraryReservation reservation) =>
+      _performSeminarAction(reservation, ending: true);
+
+  Future<String> _performSeminarAction(LibraryReservation reservation,
+      {required bool ending}) async {
+    _checkActive();
+    if (_preparingSubmission || _writing) {
       throw const LibraryBookingException('上一项操作尚未完成，请稍候。');
     }
-    if (!reservation.canCancel || reservation.id.isEmpty) {
-      throw LibraryBookingException(
-          reservation.cancellationReason ?? '此预约当前不可取消。');
+    if (_unresolvedMutation) {
+      throw const LibraryBookingException(_unknownOutcome,
+          outcomeUnknown: true);
     }
-    return _write('/api/space/seminarCancel', {'id': reservation.id},
-        fallbackMessage: '预约已取消。');
+    final id = reservation.id.trim();
+    if (id.isEmpty || !(ending ? reservation.canEnd : reservation.canCancel)) {
+      throw LibraryBookingException(
+          (ending ? reservation.endReason : reservation.cancellationReason) ??
+              (ending ? '此预约当前不能结束使用。' : '此预约当前不可取消。'));
+    }
+    _preparingSubmission = true;
+    try {
+      final current = await _readSeminarCurrentPermissions();
+      _checkActive();
+      final home = current[id];
+      if (home?.conflicting == true) {
+        throw const LibraryBookingException('当前预约状态存在冲突，请刷新或前往图书馆官网核实。');
+      }
+      var allowed = ending ? home?.canEnd == true : home?.canCancel == true;
+      if (!ending && home == null) {
+        // A current match is authoritative even when it explicitly disables
+        // cancellation. Only an absent match permits the legacy history check.
+        final history =
+            await _readSeminarHistory(_seminarReservationPages[id] ?? 1);
+        _checkActive();
+        final matches =
+            history.where((item) => _reservationId(item['id']) == id);
+        allowed =
+            matches.isNotEmpty && matches.every(_seminarHistoryAllowsCancel);
+      }
+      if (!allowed) {
+        throw LibraryBookingException(
+            ending ? '此预约当前不能结束使用，请刷新后核实状态。' : '此预约当前已不可取消，请刷新后核实状态。');
+      }
+      if (!ending &&
+          home != null &&
+          home.warning.isNotEmpty &&
+          home.warning != reservation.cancellationWarning) {
+        throw const LibraryBookingException('取消预约的提示已更新，请刷新后阅读并重新确认。');
+      }
+      return await _write(
+          ending ? '/reserve/seminar/signout' : '/api/space/seminarCancel',
+          {'id': id},
+          successCode: ending ? 0 : 1,
+          fallbackMessage: ending ? '研讨间已结束使用。' : '预约已取消。');
+    } finally {
+      _preparingSubmission = false;
+    }
   }
 
   void _completeReservationRefresh(

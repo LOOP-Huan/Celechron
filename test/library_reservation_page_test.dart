@@ -54,9 +54,17 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   int submitCalls = 0;
   int reservationCalls = 0;
   int cancelCalls = 0;
+  int endCalls = 0;
   int disposeCalls = 0;
   Object? catalogError;
   Object? submitError;
+  Object? cancelError;
+  Object? endError;
+  bool reservationCanCancel = true;
+  bool reservationCanEnd = false;
+  String reservationStatus = '预约成功';
+  String cancellationWarning = '';
+  String? endReason;
   List<LibraryRoom> rooms = const [_room];
   List<LibraryRoom>? secondDateRooms;
   final List<String?> catalogDates = [];
@@ -68,6 +76,7 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   List<LibraryTitleChoice> titleChoices = const [];
   Completer<LibraryCatalog>? pendingCatalog;
   Completer<String>? pendingSubmission;
+  Completer<String>? pendingEnd;
   LibraryBookingDraft? submittedDraft;
 
   LibraryRoomAvailability availability(LibraryRoom room, String date) =>
@@ -99,8 +108,11 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
         date: date,
         startTime: '08:00',
         endTime: '08:30',
-        status: '预约成功',
-        canCancel: true,
+        status: reservationStatus,
+        canCancel: reservationCanCancel,
+        canEnd: reservationCanEnd,
+        endReason: endReason,
+        cancellationWarning: cancellationWarning,
       );
 
   @override
@@ -164,7 +176,21 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   @override
   Future<String> cancel(LibraryReservation reservation) async {
     cancelCalls++;
+    final error = cancelError;
+    if (error != null) throw error;
     return '取消成功';
+  }
+
+  @override
+  Future<String> endUse(LibraryReservation reservation) async {
+    endCalls++;
+    final error = endError;
+    if (error != null) throw error;
+    final message = await (pendingEnd?.future ?? Future.value('结束成功'));
+    reservationCanCancel = false;
+    reservationCanEnd = false;
+    reservationStatus = '已结束使用';
+    return message;
   }
 
   @override
@@ -172,7 +198,7 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
 }
 
 Future<void> _openPage(WidgetTester tester, _FakeLibraryBookingClient client,
-    {double textScale = 1}) async {
+    {double textScale = 1, Scholar? scholar}) async {
   await tester.pumpWidget(CupertinoApp(
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(context)
@@ -180,7 +206,7 @@ Future<void> _openPage(WidgetTester tester, _FakeLibraryBookingClient client,
       child: child!,
     ),
     home: LibraryReservationPage(
-      scholar: _scholar(),
+      scholar: scholar ?? _scholar(),
       clientFactory: (username, password) {
         expect(username, '3230000001');
         expect(password, 'test-password');
@@ -593,7 +619,8 @@ void main() {
   });
 
   testWidgets('取消预约必须先确认，关闭确认框不会发送请求', (tester) async {
-    final client = _FakeLibraryBookingClient();
+    const warning = '距离预约开始不足 30 分钟，取消可能记为违约。';
+    final client = _FakeLibraryBookingClient()..cancellationWarning = warning;
     await _openPage(tester, client);
     await tester.tap(find.text('我的预约'));
     await tester.pumpAndSettle();
@@ -603,6 +630,7 @@ void main() {
     await tester.tap(cancel);
     await _pumpDialog(tester);
     expect(find.text('取消这条预约？'), findsOneWidget);
+    expect(find.textContaining(warning), findsOneWidget);
     expect(client.cancelCalls, 0);
 
     final context = tester.element(find.byType(CupertinoAlertDialog));
@@ -617,6 +645,137 @@ void main() {
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();
     expect(client.cancelCalls, 1);
+  });
+
+  testWidgets('原预约记录按权限提供结束使用，二次确认后只执行一次', (tester) async {
+    final pending = Completer<String>();
+    final client = _FakeLibraryBookingClient()
+      ..reservationCanEnd = true
+      ..reservationCanCancel = true
+      ..reservationStatus = '使用中'
+      ..pendingEnd = pending;
+    await _openPage(tester, client);
+    await tester.tap(find.text('我的预约'));
+    await tester.pumpAndSettle();
+    final end = find.byKey(const ValueKey('library-end-test-reservation'));
+    expect(end, findsOneWidget);
+    expect(find.byKey(const ValueKey('library-cancel-test-reservation')),
+        findsNothing);
+    expect(find.text('当前预约'), findsNothing);
+    expect(find.text('预约记录'), findsNothing);
+
+    await tester.tap(end);
+    await _pumpDialog(tester);
+    expect(find.text('结束使用这个研讨间？'), findsOneWidget);
+    expect(find.textContaining('确认后将结束本次研讨间使用。'), findsOneWidget);
+    expect(client.endCalls, 0);
+    await tester.tap(find.text('返回'));
+    await tester.pumpAndSettle();
+    expect(client.endCalls, 0);
+
+    await tester.tap(end);
+    await _pumpDialog(tester);
+    await tester.tap(find.text('确认结束'));
+    await _pumpDialog(tester);
+    expect(client.endCalls, 1);
+    expect(tester.widget<CupertinoButton>(end).onPressed, isNull);
+    await tester.tap(end);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(client.endCalls, 1);
+    expect(end, findsOneWidget);
+    expect(client.cancelCalls, 0);
+
+    pending.complete('结束成功');
+    await _pumpDialog(tester);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+    expect(client.reservationCalls, 2);
+    expect(find.text('已结束使用'), findsOneWidget);
+    expect(end, findsNothing);
+  });
+
+  for (final ending in [false, true]) {
+    final action = ending ? '结束' : '取消';
+    testWidgets('$action结果未知时刷新原列表并锁住同一预约的所有操作', (tester) async {
+      const unknown = LibraryBookingException('响应中断', outcomeUnknown: true);
+      final client = _FakeLibraryBookingClient()
+        ..reservationCanEnd = ending
+        ..reservationCanCancel = !ending
+        ..endError = ending ? unknown : null
+        ..cancelError = ending ? null : unknown;
+      await _openPage(tester, client);
+      await tester.tap(find.text('我的预约'));
+      await tester.pumpAndSettle();
+      final actionKey = ending
+          ? 'library-end-test-reservation'
+          : 'library-cancel-test-reservation';
+      await tester.tap(find.byKey(ValueKey(actionKey)));
+      await _pumpDialog(tester);
+      await tester.tap(find.text(ending ? '确认结束' : '确认取消'));
+      await _pumpDialog(tester);
+      expect(find.text('$action结果待确认'), findsOneWidget);
+
+      // The next read exposes the other action for the same id. It must still
+      // be locked because this page cannot establish the earlier write result.
+      client.reservationCanEnd = !ending;
+      client.reservationCanCancel = ending;
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      expect(client.reservationCalls, 2);
+      expect(find.textContaining('$action结果待确认'), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-end-test-reservation')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('library-cancel-test-reservation')),
+          findsNothing);
+      await tester.tap(find.byKey(const ValueKey('library-refresh')));
+      await tester.pumpAndSettle();
+      expect(client.reservationCalls, 3);
+      expect(client.endCalls, ending ? 1 : 0);
+      expect(client.cancelCalls, ending ? 0 : 1);
+      expect(find.byKey(const ValueKey('library-end-test-reservation')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('library-cancel-test-reservation')),
+          findsNothing);
+    });
+  }
+
+  testWidgets('结束确认期间账号改变不会发送结束请求', (tester) async {
+    final scholar = _scholar();
+    final client = _FakeLibraryBookingClient()..reservationCanEnd = true;
+    await _openPage(tester, client, scholar: scholar);
+    await tester.tap(find.text('我的预约'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('library-end-test-reservation')));
+    await _pumpDialog(tester);
+    scholar.username = '3230000002';
+    await tester.tap(find.text('确认结束'));
+    await tester.pumpAndSettle();
+    expect(client.endCalls, 0);
+    expect(client.cancelCalls, 0);
+    expect(client.disposeCalls, 1);
+    expect(find.textContaining('登录账号已变化'), findsOneWidget);
+  });
+
+  testWidgets('使用中状态本身不授予结束权限，展示服务端不可用原因', (tester) async {
+    const reason = '结束权限暂未确认，请刷新预约记录后重试。';
+    final client = _FakeLibraryBookingClient()
+      ..reservationCanEnd = false
+      ..reservationCanCancel = false
+      ..reservationStatus = '使用中'
+      ..endReason = reason;
+    await _openPage(tester, client);
+    await tester.tap(find.text('我的预约'));
+    await tester.pumpAndSettle();
+    expect(find.text('使用中'), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-end-test-reservation')),
+        findsNothing);
+    expect(find.byKey(const ValueKey('library-cancel-test-reservation')),
+        findsNothing);
+    expect(client.endCalls, 0);
+    expect(client.cancelCalls, 0);
   });
 
   testWidgets('预约表单先展示确认内容，取消确认不会提交', (tester) async {
