@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:celechron/design/custom_colors.dart';
@@ -609,7 +610,7 @@ class FlowPage extends StatelessWidget {
                 if (_flowController.isFlowListOutdated()) {
                   return GlassSurface(
                     margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                    borderRadius: 20,
+                    borderRadius: GlassGeometry.surfaceRadius,
                     tint: CupertinoColors.systemOrange,
                     child: MaterialBanner(
                       backgroundColor: CupertinoColors.transparent,

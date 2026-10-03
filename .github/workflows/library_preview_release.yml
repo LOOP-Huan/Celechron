@@ -20,11 +20,11 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v1.3.1-library-preview-20261003.6
-      RELEASE_TITLE: Celechron 1.3.1 液态玻璃预览版
-      APK_NAME: celechron-v1.3.1-library-preview8-universal.apk
+      RELEASE_TAG: v1.3.1-library-preview-20261003.7
+      RELEASE_TITLE: Celechron 1.3.1 自定义背景与圆角优化预览版
+      APK_NAME: celechron-v1.3.1-library-preview9-universal.apk
       APP_VERSION: 1.3.1
-      APP_BUILD_NUMBER: '8'
+      APP_BUILD_NUMBER: '9'
 
     steps:
       - name: Check out the exact source commit
@@ -131,19 +131,21 @@ jobs:
           release_dir="$RUNNER_TEMP/library-preview-assets"
           notes_file="$RUNNER_TEMP/library-preview-release-notes.md"
           cat > "$notes_file" <<'NOTES'
-          将已确认的动态玻璃样例接入 App：卡片、分组列表、悬浮胶囊底栏和浮动标题使用实时背景折射、约 0.9 逻辑像素的轻微模糊及细窄高光，覆盖接下来、日程、任务、学业、设置与图书馆预约。前景文字保持清晰，不使用逐帧截图或厚重渐变模拟玻璃。
+          统一预约切换栏、悬浮底栏和内容卡片的圆角：外框采用同一半径，内层选中块按间距缩进，解决“预约/我的预约”外壳与选中块弧度不匹配的问题。预约切换支持点击、滑动、键盘操作和选中状态语义，提交期间禁用切换。
 
-          浅色与深色主题均适配；高对比度下玻璃容器采用实色并关闭光学效果，按压和切换动效尊重系统减少动画设置。密集列表和嵌套小卡共用外层玻璃，避免重复折射。系统导航栏保留 Cupertino 原生布局及转场。
+          新增“设置 → 工具 → 应用背景”：从相册选择图片、预览后确认应用，重启后保留，也可恢复默认背景。图片仅保存在本机；取消选择或预览不会更改当前背景。图片处理设有大小限制，损坏文件自动回退默认背景，保存失败保留原图。
+
+          自定义图片以居中裁切方式铺满页面，并按浅深色主题调整遮罩，让玻璃卡片和文字保持可读。页面内不重复叠加背景，键盘弹出不改变底层图片的裁切；高对比度下隐藏背景图并使用实色容器。
 
           实时折射使用 Flutter 3.38 的 Impeller ImageFilter.shader。设备渲染器不支持该能力，或转场中的离屏图层无法可靠定位背景时，会退回轻微透明模糊；该回退不具有折射效果。
 
-          保留现有账号、课表、任务、扫码和图书馆预约流程，保留座位/研讨间可用优先排序及楼层数量统计。付款二维码继续使用纯白底板。没有增加系统权限、外部UI依赖或定时预约功能。
+          保留现有账号、课表、任务、扫码和图书馆预约流程，包括可用优先排序、楼层数量统计及取消/结束。付款二维码继续使用纯白底板。Android 使用系统图片选择器，不申请广泛存储权限；定时预约仍未启用。
 
-          此 APK 由当前源码在 GitHub Actions 中构建，完整自动测试通过，签名及 SHA-256 已校验。原生 Impeller 软件渲染验证了实时背景采样；界面以合成数据检查小屏、浅深色和交互。手机 GPU 的帧率及耗电仍需实机体验；本轮未使用真实校园账号执行预约、取消或结束使用。
+          此 APK 由当前源码在 GitHub Actions 中构建，完整自动测试通过，签名及 SHA-256 已校验。背景保存/恢复/失败处理和控件交互经过自动测试；界面使用合成图片及数据检查浅深色、背景预览与原生玻璃渲染。手机相册选择器及 GPU 表现仍需实机体验；本轮未使用真实校园账号执行预约、取消或结束使用。
 
           **安装须知：**支持 Android 9 及以上，包含 arm64-v8a、armeabi-v7a、x86_64。本预发布使用本次 CI 生成的测试签名，与原版、上一预发布及本地测试包的签名不同，不能直接覆盖安装。卸载已有版本会清除本地数据，请先导出需要保留的数据。
 
-          版本：1.3.1+8。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
+          版本：1.3.1+9。附件 SHA256SUMS 对应本次实际构建的 APK；请以该文件校验下载结果。
           NOTES
           printf '\n源码提交：`%s`\n\n<!-- celechron-library-preview-source:%s -->\n' "$GITHUB_SHA" "$GITHUB_SHA" >> "$notes_file"
           gh release create "$RELEASE_TAG" \

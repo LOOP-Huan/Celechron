@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/glass_list_section.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/services/diagnostic_log_service.dart';
@@ -178,13 +179,17 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
                     groupValue: _mode,
                     children: const {
                       0: Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 7,
+                        ),
                         child: Text('易读报告'),
                       ),
                       1: Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 7,
+                        ),
                         child: Text('原始日志'),
                       ),
                     },
@@ -200,10 +205,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
                 key: const ValueKey('diagnostic-mode-pages'),
                 controller: _pageController,
                 onPageChanged: (value) => setState(() => _mode = value),
-                children: [
-                  _buildReadablePage(context),
-                  _buildRawPage(context),
-                ],
+                children: [_buildReadablePage(context), _buildRawPage(context)],
               ),
             ),
           ],
@@ -274,8 +276,11 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(_severityIcon(report.severity),
-                    color: statusColor, size: 24),
+                Icon(
+                  _severityIcon(report.severity),
+                  color: statusColor,
+                  size: 24,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -294,10 +299,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
                         '${diagnosticOriginLabel(report.origin)} · '
                         '${formatLocalDiagnosticTime(report.startedAtUtc)}',
                         style: TextStyle(
-                          color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel,
-                            context,
-                          ),
+                          color: GlassPalette.secondaryLabel(context),
                         ),
                       ),
                     ],
@@ -385,7 +387,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
       key: ValueKey('module-${module.name}'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      borderRadius: 18,
+      borderRadius: GlassGeometry.surfaceRadius,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -441,10 +443,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
                   '${formatLocalDiagnosticTime(event.timestampUtc)}'
                   '${event.description == null ? '' : ' · ${event.description}'}',
                   style: TextStyle(
-                    color: CupertinoDynamicColor.resolve(
-                      CupertinoColors.secondaryLabel,
-                      context,
-                    ),
+                    color: GlassPalette.secondaryLabel(context),
                     fontSize: 13,
                   ),
                 ),
@@ -464,10 +463,12 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
       key: ValueKey('issue-${issue.id}'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
-      borderRadius: 18,
+      borderRadius: GlassGeometry.surfaceRadius,
       tint: issue.severity == DiagnosticIssueSeverity.error
-          ? CupertinoDynamicColor.resolve(CupertinoColors.systemRed, context)
-              .withValues(alpha: 0.08)
+          ? CupertinoDynamicColor.resolve(
+              CupertinoColors.systemRed,
+              context,
+            ).withValues(alpha: 0.08)
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -475,16 +476,15 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
           Text(
             diagnosticIssueCategoryLabel(issue.category),
             style: TextStyle(
-              color: CupertinoDynamicColor.resolve(
-                CupertinoColors.secondaryLabel,
-                context,
-              ),
+              color: GlassPalette.secondaryLabel(context),
               fontSize: 13,
             ),
           ),
           const SizedBox(height: 3),
-          Text(issue.title,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            issue.title,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 4),
           Text(issue.explanation),
           CupertinoButton(
@@ -502,7 +502,9 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
           if (expanded) ...[
             _technicalRow('refreshId', details.refreshId),
             _technicalRow(
-                'UTC 时间', formatUtcDiagnosticTime(details.timestampUtc)),
+              'UTC 时间',
+              formatUtcDiagnosticTime(details.timestampUtc),
+            ),
             _technicalRow('HTTP 状态码', '${details.statusCode ?? '-'}'),
             _technicalRow('请求接口', details.interfaceName),
             _technicalRow('已脱敏 URL', details.url ?? '-'),
@@ -570,10 +572,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
               '最多保留 2000 行和最近 10 个导出文件。',
             ),
             children: [
-              CupertinoListTile(
-                title: const Text('复制完整原始日志'),
-                onTap: _copy,
-              ),
+              CupertinoListTile(title: const Text('复制完整原始日志'), onTap: _copy),
               CupertinoListTile(
                 title: Text(_busy ? '正在导出…' : '导出并分享 TXT'),
                 subtitle: const Text('包含易读报告和完整原始日志'),
@@ -591,7 +590,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
           GlassSurface(
             margin: const EdgeInsets.symmetric(horizontal: 16),
             padding: const EdgeInsets.all(16),
-            borderRadius: 22,
+            borderRadius: GlassGeometry.surfaceRadius,
             child: Text(
               displayText,
               style: const TextStyle(
@@ -607,10 +606,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
   }
 
   Widget _card(BuildContext context, {required Widget child}) {
-    return GlassSurface(
-      padding: const EdgeInsets.all(16),
-      child: child,
-    );
+    return GlassSurface(padding: const EdgeInsets.all(16), child: child);
   }
 
   Widget _noticeCard(BuildContext context, String text) {
@@ -632,7 +628,7 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
   Widget _metric(BuildContext context, String label, String value) {
     return GlassSurface(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      borderRadius: 12,
+      borderRadius: GlassGeometry.compactRadius,
       child: Text('$label $value'),
     );
   }
@@ -679,7 +675,9 @@ class _DiagnosticLogPageState extends State<DiagnosticLogPage> {
   }
 
   Color _severityColor(
-      BuildContext context, DiagnosticReportSeverity severity) {
+    BuildContext context,
+    DiagnosticReportSeverity severity,
+  ) {
     final color = switch (severity) {
       DiagnosticReportSeverity.success => CupertinoColors.systemGreen,
       DiagnosticReportSeverity.degraded => CupertinoColors.systemOrange,

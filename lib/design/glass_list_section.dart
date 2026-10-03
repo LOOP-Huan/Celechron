@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'liquid_glass.dart';
@@ -18,7 +19,7 @@ class GlassListSection extends StatelessWidget {
     this.topMargin,
     this.hasLeading = true,
     this.separatorColor,
-    this.borderRadius = 24,
+    this.borderRadius = GlassGeometry.surfaceRadius,
     this.blur = true,
   }) : assert(header != null || (children != null && children.length > 0));
 

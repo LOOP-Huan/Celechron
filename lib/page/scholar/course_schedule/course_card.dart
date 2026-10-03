@@ -212,8 +212,7 @@ class _SessionCardState extends State<SessionCard>
                               .textStyle
                               .copyWith(
                                 fontSize: 9,
-                                color: CupertinoDynamicColor.resolve(
-                                    CupertinoColors.secondaryLabel, context),
+                                color: GlassPalette.secondaryLabel(context),
                               ),
                         ),
                       ),

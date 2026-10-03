@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -18,7 +19,7 @@ class LibraryStepHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
+    final primary = GlassPalette.accentColor(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(
@@ -55,18 +56,20 @@ class LibraryStepHeader extends StatelessWidget {
                 label: '第 ${currentStep + 1} 步，共 ${steps.length} 步',
                 child: ExcludeSemantics(
                   child: DecoratedBox(
-                    decoration: GlassPalette.decoration(context, radius: 12),
+                    decoration: GlassPalette.decoration(
+                      context,
+                      radius: GlassGeometry.compactRadius,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 4),
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
                       child: Text(
                         '${currentStep + 1} / ${steps.length}',
                         style: TextStyle(
                           fontSize: 13,
-                          color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel,
-                            context,
-                          ),
+                          color: GlassPalette.secondaryLabel(context),
                         ),
                       ),
                     ),
@@ -153,9 +156,10 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
       if (mounted && selectedContext != null) {
         final target = selectedContext.findRenderObject();
         if (target != null) {
-          Scrollable.of(selectedContext, axis: Axis.horizontal)
-              .position
-              .ensureVisible(
+          Scrollable.of(
+            selectedContext,
+            axis: Axis.horizontal,
+          ).position.ensureVisible(
                 target,
                 alignment: 0.5,
                 duration: const Duration(milliseconds: 180),
@@ -175,7 +179,7 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
 
   @override
   Widget build(BuildContext context) {
-    final primary = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
+    final primary = GlassPalette.accentColor(context);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -198,14 +202,18 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
                 child: DecoratedBox(
                   decoration: GlassPalette.decoration(
                     context,
-                    radius: 22,
+                    radius: GlassGeometry.compactRadius,
                     selected: floor.id == widget.selectedId,
                   ),
                   child: CupertinoButton(
                     key: ValueKey('library-floor-${floor.id}'),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    borderRadius: BorderRadius.circular(22),
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    borderRadius: BorderRadius.circular(
+                      GlassGeometry.compactRadius,
+                    ),
                     onPressed: widget.onChanged == null
                         ? null
                         : () => widget.onChanged!(floor.id),
@@ -218,8 +226,7 @@ class _LibraryFloorTabsState extends State<LibraryFloorTabs> {
                             ? FontWeight.w600
                             : FontWeight.w400,
                         color: widget.onChanged == null
-                            ? CupertinoDynamicColor.resolve(
-                                CupertinoColors.secondaryLabel, context)
+                            ? GlassPalette.secondaryLabel(context)
                             : floor.id == widget.selectedId
                                 ? primary
                                 : CupertinoDynamicColor.resolve(

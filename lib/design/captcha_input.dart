@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:celechron/utils/global.dart';
 
@@ -64,10 +65,10 @@ class ImageCodePortal {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text("点击图片刷新",
+                    Text("点击图片刷新",
                         style: TextStyle(
                             fontSize: 12,
-                            color: CupertinoColors.secondaryLabel)),
+                            color: GlassPalette.secondaryLabel(context))),
 
                     const SizedBox(height: 20),
 

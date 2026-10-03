@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'liquid_glass.dart';
@@ -57,9 +58,12 @@ class CelechronHeader extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return GlassSurface(
-      borderRadius: 0,
+      borderRadius: GlassGeometry.flushRadius,
       tint: CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
       blur: overlapsContent || shrinkOffset > 0,
       padding: EdgeInsets.only(top: padding),
@@ -78,8 +82,7 @@ class CelechronHeader extends SliverPersistentHeaderDelegate {
                       child: Icon(
                         CupertinoIcons.back,
                         semanticLabel: '返回',
-                        color: CupertinoDynamicColor.resolve(
-                            GlassPalette.accent, context),
+                        color: GlassPalette.accentColor(context),
                       ),
                     ),
               middle: Hero(

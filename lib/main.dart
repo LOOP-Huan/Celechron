@@ -22,6 +22,8 @@ import 'package:celechron/database/database_helper.dart';
 import 'package:celechron/utils/global.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/refractive_glass.dart';
+import 'package:celechron/design/app_background_scope.dart';
+import 'package:celechron/services/app_background_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +47,7 @@ void main() async {
   Get.put(db.getFuse().obs, tag: 'fuse');
 
   await RefractiveGlass.preload();
+  await AppBackgroundService.instance.init();
   runApp(const CelechronApp());
 
   var scholar = Get.find<Rx<Scholar>>(tag: 'scholar');
@@ -54,8 +57,9 @@ void main() async {
     // 校园卡使用不同 HttpClient/User-Agent，等 Scholar 认证和抓取
     // 完成后再启动，避免两套 CAS 链路在启动瞬间互相干扰。
     unawaited(
-      _refreshRestoredScholar(scholar)
-          .whenComplete(ECardWidgetMessenger.update),
+      _refreshRestoredScholar(
+        scholar,
+      ).whenComplete(ECardWidgetMessenger.update),
     );
   } else {
     unawaited(ECardWidgetMessenger.update());
@@ -147,49 +151,59 @@ class _CelechronAppState extends State<CelechronApp>
   @override
   Widget build(BuildContext context) {
     var brightnessMode = Get.find<Option>(tag: 'option').brightnessMode;
-    return Obx(() => GetCupertinoApp(
-          theme: CupertinoThemeData(
-            brightness: brightnessMode.value == BrightnessMode.system
-                ? null
-                : brightnessMode.value == BrightnessMode.dark
-                    ? Brightness.dark
-                    : Brightness.light,
-            primaryColor: GlassPalette.accent,
-            primaryContrastingColor: GlassPalette.onAccent,
-            scaffoldBackgroundColor: GlassPalette.background,
-            barBackgroundColor: GlassPalette.barColor,
+    return Obx(
+      () => GetCupertinoApp(
+        theme: CupertinoThemeData(
+          brightness: brightnessMode.value == BrightnessMode.system
+              ? null
+              : brightnessMode.value == BrightnessMode.dark
+                  ? Brightness.dark
+                  : Brightness.light,
+          primaryColor: GlassPalette.accent,
+          primaryContrastingColor: GlassPalette.onAccent,
+          scaffoldBackgroundColor: GlassPalette.background,
+          barBackgroundColor: GlassPalette.barColor,
+        ),
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('zh'), Locale('en')],
+        locale: const Locale('zh'),
+        builder: (context, child) => AppBackgroundScope(
+          service: AppBackgroundService.instance,
+          child: Builder(
+            builder: (context) => CupertinoTheme(
+              data: CupertinoTheme.of(
+                context,
+              ).copyWith(primaryColor: GlassPalette.accentColor(context)),
+              child: MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(alwaysUse24HourFormat: true),
+                child: child!,
+              ),
+            ),
           ),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-          ],
-          supportedLocales: const [
-            Locale('zh'),
-            Locale('en'),
-          ],
-          locale: const Locale('zh'),
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-            child: child!,
-          ),
-          title: 'Celechron',
-          home: const HomePage(title: 'Celechron'),
-          initialRoute: '/',
-          routes: {
-            '/ecardpaypage': (context) => ECardPayPage(),
-          },
-          debugShowCheckedModeBanner: false,
-          navigatorKey: navigatorKey,
-        ));
+        ),
+        title: 'Celechron',
+        home: const HomePage(title: 'Celechron'),
+        initialRoute: '/',
+        routes: {'/ecardpaypage': (context) => ECardPayPage()},
+        debugShowCheckedModeBanner: false,
+        navigatorKey: navigatorKey,
+      ),
+    );
   }
 
   void _initAppLinks() {
     final appLinks = AppLinks();
     appLinks.uriLinkStream.listen((uri) {
       if (uri.toString() == 'celechron://ecardpaypage') {
-        navigator?.popUntil((route) =>
-            !(route.settings.name?.endsWith('ecardpaypage') ?? false));
+        navigator?.popUntil(
+          (route) => !(route.settings.name?.endsWith('ecardpaypage') ?? false),
+        );
         navigator?.pushNamed('/ecardpaypage');
       }
     });
@@ -202,29 +216,36 @@ class _CelechronAppState extends State<CelechronApp>
 
     ever(brightnessMode, (mode) {
       if (mode == BrightnessMode.system) {
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarIconBrightness:
-              dispatcher.platformBrightness == Brightness.light
-                  ? Brightness.dark
-                  : Brightness.light,
-          systemNavigationBarColor: Colors.transparent,
-        ));
-        dispatcher.onPlatformBrightnessChanged = () {
-          SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+        SystemChrome.setSystemUIOverlayStyle(
+          SystemUiOverlayStyle(
             statusBarIconBrightness:
                 dispatcher.platformBrightness == Brightness.light
                     ? Brightness.dark
                     : Brightness.light,
             systemNavigationBarColor: Colors.transparent,
-          ));
+          ),
+        );
+        dispatcher.onPlatformBrightnessChanged = () {
+          SystemChrome.setSystemUIOverlayStyle(
+            SystemUiOverlayStyle(
+              statusBarIconBrightness:
+                  dispatcher.platformBrightness == Brightness.light
+                      ? Brightness.dark
+                      : Brightness.light,
+              systemNavigationBarColor: Colors.transparent,
+            ),
+          );
         };
       } else {
         dispatcher.onPlatformBrightnessChanged = null;
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarIconBrightness:
-              mode == BrightnessMode.light ? Brightness.dark : Brightness.light,
-          systemNavigationBarColor: Colors.transparent,
-        ));
+        SystemChrome.setSystemUIOverlayStyle(
+          SystemUiOverlayStyle(
+            statusBarIconBrightness: mode == BrightnessMode.light
+                ? Brightness.dark
+                : Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+          ),
+        );
       }
     });
     brightnessMode.refresh();
@@ -233,8 +254,9 @@ class _CelechronAppState extends State<CelechronApp>
   void _initNotification() {
     FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
-    const initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initializationSettingsAndroid = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()

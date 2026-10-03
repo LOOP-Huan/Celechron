@@ -57,8 +57,8 @@ class PracticeScoreColumns extends StatelessWidget {
           Text(
             passed.join(' · '),
             key: const ValueKey('practice-passed-status'),
-            style: const TextStyle(
-              color: CupertinoColors.secondaryLabel,
+            style: TextStyle(
+              color: GlassPalette.secondaryLabel(context),
               fontSize: 13,
             ),
           ),
@@ -251,9 +251,9 @@ class _SummaryCard extends StatelessWidget {
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '正式汇总记点',
-            style: TextStyle(color: CupertinoColors.secondaryLabel),
+            style: TextStyle(color: GlassPalette.secondaryLabel(context)),
           ),
           const SizedBox(height: 4),
           Text(
@@ -265,17 +265,17 @@ class _SummaryCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '记点来源：${source.label}',
-            style: const TextStyle(color: CupertinoColors.secondaryLabel),
+            style: TextStyle(color: GlassPalette.secondaryLabel(context)),
           ),
           const SizedBox(height: 4),
           Text(
             '项目明细来源：${detailSource.label}',
-            style: const TextStyle(color: CupertinoColors.secondaryLabel),
+            style: TextStyle(color: GlassPalette.secondaryLabel(context)),
           ),
           const SizedBox(height: 4),
           Text(
             '更新时间：${_dateTime(updatedAt)}',
-            style: const TextStyle(color: CupertinoColors.secondaryLabel),
+            style: TextStyle(color: GlassPalette.secondaryLabel(context)),
           ),
           if (stale) ...[
             const SizedBox(height: 10),
@@ -292,10 +292,10 @@ class _SummaryCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
-          const Text(
+          Text(
             '正式汇总与项目记录可能不完全一致，项目明细仍按 getSqjl 原样展示。',
             style: TextStyle(
-              color: CupertinoColors.secondaryLabel,
+              color: GlassPalette.secondaryLabel(context),
               fontSize: 13,
               height: 1.4,
             ),
@@ -319,8 +319,8 @@ class _NoDetailsCard extends StatelessWidget {
       child: Text(
         zdbkOnly ? '当前仅获取到旧实践汇总，暂无 getSqjl 项目明细。' : '当前 getSqjl 项目明细不可用，请稍后刷新。',
         key: const ValueKey('practice-no-details'),
-        style: const TextStyle(
-          color: CupertinoColors.secondaryLabel,
+        style: TextStyle(
+          color: GlassPalette.secondaryLabel(context),
           height: 1.5,
         ),
       ),
@@ -373,8 +373,8 @@ class _PracticeItemCard extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       '${item.projectType} · ${item.qualityType}',
-                      style: const TextStyle(
-                        color: CupertinoColors.secondaryLabel,
+                      style: TextStyle(
+                        color: GlassPalette.secondaryLabel(context),
                         fontSize: 13,
                       ),
                     ),
@@ -425,8 +425,8 @@ class _SectionTitle extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
         child: Text(
           '$title（$count）',
-          style: const TextStyle(
-            color: CupertinoColors.secondaryLabel,
+          style: TextStyle(
+            color: GlassPalette.secondaryLabel(context),
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -444,7 +444,7 @@ class _EmptyGroup extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(4, 8, 4, 18),
         child: Text(
           text,
-          style: const TextStyle(color: CupertinoColors.secondaryLabel),
+          style: TextStyle(color: GlassPalette.secondaryLabel(context)),
         ),
       );
 }
@@ -489,7 +489,7 @@ class _DetailRow extends StatelessWidget {
               width: 112,
               child: Text(
                 label,
-                style: const TextStyle(color: CupertinoColors.secondaryLabel),
+                style: TextStyle(color: GlassPalette.secondaryLabel(context)),
               ),
             ),
             Expanded(

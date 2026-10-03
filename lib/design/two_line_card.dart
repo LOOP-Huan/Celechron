@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'liquid_glass.dart';
@@ -82,10 +83,7 @@ class _TwoLineCardState extends State<TwoLineCard> {
                   widget.title,
                   maxLines: 1,
                   style: textStyle.copyWith(
-                    color: CupertinoDynamicColor.resolve(
-                      CupertinoColors.secondaryLabel,
-                      context,
-                    ),
+                    color: GlassPalette.secondaryLabel(context),
                     fontSize: 14,
                     fontWeight: FontWeight.normal,
                   ),
@@ -157,7 +155,7 @@ class _TwoLineCardState extends State<TwoLineCard> {
       height: widget.height,
       width: widget.width,
       child: GlassSurface(
-        borderRadius: 20,
+        borderRadius: GlassGeometry.surfaceRadius,
         padding: const EdgeInsets.all(16),
         tint: widget.backgroundColor == CupertinoColors.systemBackground
             ? null

@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'liquid_glass.dart';
@@ -55,7 +56,7 @@ class _AnimateButtonState extends State<AnimateButton> {
               : Duration(milliseconds: _pressed ? 140 : 240),
           curve: Curves.easeOutCubic,
           child: GlassSurface(
-            borderRadius: 14,
+            borderRadius: GlassGeometry.compactRadius,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             tint: widget.backgroundColor == CupertinoColors.systemBackground
                 ? null

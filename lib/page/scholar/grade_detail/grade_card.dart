@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'dart:math';
 
@@ -103,7 +104,7 @@ class _GradeCardState extends State<GradeCard>
           child: GlassSurface(
             padding:
                 const EdgeInsets.only(left: 12, right: 12, bottom: 8, top: 8),
-            borderRadius: 20,
+            borderRadius: GlassGeometry.surfaceRadius,
             tint: widget.backgroundColor,
             emphasized:
                 _gradeDetailController.customGpaMode.value && isHighlighted(),

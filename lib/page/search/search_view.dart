@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 // Official packages
 import 'package:extended_sliver/extended_sliver.dart';
@@ -40,7 +41,8 @@ class SearchPage extends StatelessWidget {
                             .textTheme
                             .textStyle
                             .copyWith(height: 1.25, fontSize: 18),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius:
+                            BorderRadius.circular(GlassGeometry.compactRadius),
                         itemColor: CupertinoColors.systemGrey,
                         itemSize: 20,
                         suffixInsets:

@@ -152,8 +152,7 @@ class _CreditsPageState extends State<CreditsPage> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: CupertinoDynamicColor.resolve(
-                                    CupertinoColors.secondaryLabel, context),
+                                color: GlassPalette.secondaryLabel(context),
                               ),
                             ),
                           ],
@@ -246,8 +245,7 @@ class _CreditsPageState extends State<CreditsPage> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 12,
-                          color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.secondaryLabel, context)),
+                          color: GlassPalette.secondaryLabel(context)),
                     ),
                     const SizedBox(
                       height: 4,
@@ -257,8 +255,7 @@ class _CreditsPageState extends State<CreditsPage> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
-                        color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel, context),
+                        color: GlassPalette.secondaryLabel(context),
                       ),
                     ),
                   ],

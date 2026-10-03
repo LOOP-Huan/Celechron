@@ -162,7 +162,7 @@ class LibraryBookingService
   void _checkActive([int? generation]) {
     if (_disposed ||
         (generation != null && generation != _generation) ||
-        (_canUseSession != null && !_canUseSession!())) {
+        (_canUseSession != null && !_canUseSession())) {
       throw const LibraryBookingException('图书馆会话已关闭，请重新打开预约页面。');
     }
   }

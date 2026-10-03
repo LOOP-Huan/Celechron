@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:celechron/design/liquid_glass.dart';
+import 'package:celechron/design/glass_geometry.dart';
+import 'package:celechron/design/glass_segmented_control.dart';
 import 'package:celechron/http/zjuServices/library_booking.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
@@ -9,9 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'library_booking_widgets.dart';
 
 typedef LibrarySeatClientFactory = LibrarySeatBookingClient Function(
-  String username,
-  String password,
-);
+    String username, String password);
 
 class LibrarySeatPage extends StatefulWidget {
   const LibrarySeatPage({
@@ -150,35 +150,38 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
   }
 
   Future<void> _loadCatalog({String? date, String? preferredBuildingId}) =>
-      _read((client) async {
-        final catalog = await client.loadSeatCatalog(date: date);
-        if (!_checkAccount()) return;
-        setState(() {
-          _catalog = catalog;
-          _building = catalog.buildings
-                  .where((building) => building.id == preferredBuildingId)
-                  .firstOrNull ??
-              catalog.buildings.firstOrNull;
-          _date =
-              catalog.dates.contains(date) ? date : catalog.dates.firstOrNull;
-          _areas = [];
-          _floor = '';
-          _clearArea();
-        });
-        if (_building == null || _date == null) return;
-        final areas = await client.loadSeatAreas(
-          buildingId: _building!.id,
-          date: _date!,
-        );
-        if (_checkAccount()) {
+      _read(
+        (client) async {
+          final catalog = await client.loadSeatCatalog(date: date);
+          if (!_checkAccount()) return;
           setState(() {
-            _areas = areas;
-            _floor = areas.firstOrNull?.floorName ?? '';
+            _catalog = catalog;
+            _building = catalog.buildings
+                    .where((building) => building.id == preferredBuildingId)
+                    .firstOrNull ??
+                catalog.buildings.firstOrNull;
+            _date =
+                catalog.dates.contains(date) ? date : catalog.dates.firstOrNull;
+            _areas = [];
+            _floor = '';
+            _clearArea();
           });
-        }
-      },
-          () => unawaited(_loadCatalog(
-              date: date, preferredBuildingId: preferredBuildingId)));
+          if (_building == null || _date == null) return;
+          final areas = await client.loadSeatAreas(
+            buildingId: _building!.id,
+            date: _date!,
+          );
+          if (_checkAccount()) {
+            setState(() {
+              _areas = areas;
+              _floor = areas.firstOrNull?.floorName ?? '';
+            });
+          }
+        },
+        () => unawaited(
+          _loadCatalog(date: date, preferredBuildingId: preferredBuildingId),
+        ),
+      );
 
   Future<void> _loadAreas() => _read((client) async {
         if (_building == null || _date == null) return;
@@ -199,51 +202,60 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         }
       }, () => unawaited(_loadAreas()));
 
-  Future<void> _loadAvailability(LibrarySeatArea area,
-      {bool preserveSelection = false}) {
+  Future<void> _loadAvailability(
+    LibrarySeatArea area, {
+    bool preserveSelection = false,
+  }) {
     final previousSegment = preserveSelection ? _segment : null;
     final previousSeat = preserveSelection ? _seat : null;
     final previousSearch = preserveSelection ? _search.text : '';
     final previousPage = preserveSelection ? _seatPage : 0;
-    return _read((client) async {
-      setState(() {
-        _clearArea();
-        _area = area;
-        _bookingStep = 1;
-      });
-      final availability = await client.loadSeatAvailability(area: area);
-      if (!_checkAccount()) return;
-      final day =
-          availability.days.where((value) => value.date == _date).firstOrNull;
-      final segment = availability.canReserve &&
-              availability.unsupportedReason == null
-          ? day?.segments
-              .where((value) =>
-                  value.canReserve &&
-                  (previousSegment == null || value.id == previousSegment.id))
-              .firstOrNull
-          : null;
-      setState(() {
-        _availability = availability;
-        _segment = segment;
-      });
-      if (segment == null) return;
-      final seats = await client.loadSeats(area: area, segment: segment);
-      if (_checkAccount()) {
+    return _read(
+      (client) async {
         setState(() {
-          _seats = seats;
-          _hasLoadedSeats = true;
-          _seat = seats
-              .where(
-                  (value) => value.canReserve && value.id == previousSeat?.id)
-              .firstOrNull;
-          _search.text = previousSearch;
-          _seatPage = previousPage;
+          _clearArea();
+          _area = area;
+          _bookingStep = 1;
         });
-      }
-    },
-        () => unawaited(
-            _loadAvailability(area, preserveSelection: preserveSelection)));
+        final availability = await client.loadSeatAvailability(area: area);
+        if (!_checkAccount()) return;
+        final day =
+            availability.days.where((value) => value.date == _date).firstOrNull;
+        final segment =
+            availability.canReserve && availability.unsupportedReason == null
+                ? day?.segments
+                    .where(
+                      (value) =>
+                          value.canReserve &&
+                          (previousSegment == null ||
+                              value.id == previousSegment.id),
+                    )
+                    .firstOrNull
+                : null;
+        setState(() {
+          _availability = availability;
+          _segment = segment;
+        });
+        if (segment == null) return;
+        final seats = await client.loadSeats(area: area, segment: segment);
+        if (_checkAccount()) {
+          setState(() {
+            _seats = seats;
+            _hasLoadedSeats = true;
+            _seat = seats
+                .where(
+                  (value) => value.canReserve && value.id == previousSeat?.id,
+                )
+                .firstOrNull;
+            _search.text = previousSearch;
+            _seatPage = previousPage;
+          });
+        }
+      },
+      () => unawaited(
+        _loadAvailability(area, preserveSelection: preserveSelection),
+      ),
+    );
   }
 
   Future<void> _loadSeats(LibrarySeatSegment segment) => _read((client) async {
@@ -279,16 +291,21 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
       }, () => unawaited(_loadReservations(more: more)));
 
   Future<T?> _choose<T>(
-          String title, List<T> values, String Function(T value) label) =>
+    String title,
+    List<T> values,
+    String Function(T value) label,
+  ) =>
       showCupertinoModalPopup<T>(
         context: context,
         builder: (context) => CupertinoActionSheet(
           title: Text(title),
           actions: values
-              .map((value) => CupertinoActionSheetAction(
-                    onPressed: () => Navigator.of(context).pop(value),
-                    child: Text(label(value)),
-                  ))
+              .map(
+                (value) => CupertinoActionSheetAction(
+                  onPressed: () => Navigator.of(context).pop(value),
+                  child: Text(label(value)),
+                ),
+              )
               .toList(),
           cancelButton: CupertinoActionSheetAction(
             onPressed: () => Navigator.of(context).pop(),
@@ -311,8 +328,11 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
   }
 
   Future<void> _chooseBuilding() async {
-    final value =
-        await _choose('选择馆区', _catalog!.buildings, (building) => building.name);
+    final value = await _choose(
+      '选择馆区',
+      _catalog!.buildings,
+      (building) => building.name,
+    );
     if (!mounted || value == null || value.id == _building?.id) return;
     setState(() => _building = value);
     await _loadAreas();
@@ -407,8 +427,10 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         _seat = null;
       });
       refresh = true;
-      await _message(cancellation == null ? '预约已提交' : '预约已取消',
-          message.isEmpty ? '请在「我的座位」查看最新状态。' : message);
+      await _message(
+        cancellation == null ? '预约已提交' : '预约已取消',
+        message.isEmpty ? '请在「我的座位」查看最新状态。' : message,
+      );
     } on Object catch (error) {
       if (!_checkAccount()) return;
       if (error is LibraryBookingException && error.outcomeUnknown) {
@@ -427,7 +449,9 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         );
       } else {
         await _message(
-            cancellation == null ? '预约未完成' : '取消未完成', _errorText(error));
+          cancellation == null ? '预约未完成' : '取消未完成',
+          _errorText(error),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -455,7 +479,8 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
           '请确认已阅读预约须知，到馆后按图书馆要求签到。',
       confirmLabel: '提交预约',
       action: () => _client!.submitSeat(
-          LibrarySeatDraft(area: area, segment: segment, seat: seat)),
+        LibrarySeatDraft(area: area, segment: segment, seat: seat),
+      ),
     );
   }
 
@@ -478,8 +503,9 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
   Future<void> _openOfficialSite() async {
     try {
       final opened = await launchUrl(
-          Uri.https('booking.lib.zju.edu.cn', '/h5/'),
-          mode: LaunchMode.externalApplication);
+        Uri.https('booking.lib.zju.edu.cn', '/h5/'),
+        mode: LaunchMode.externalApplication,
+      );
       if (!opened && mounted) {
         await _message('无法打开官网', '请在浏览器访问 m.lib.zju.edu.cn。');
       }
@@ -502,24 +528,30 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
   void _showRules() {
     if (_busy) return;
     final rules = _availability?.rules.trim() ?? '';
-    Navigator.of(context).push(CupertinoPageRoute<void>(
-      builder: (context) => GlassPageScaffold(
-        navigationBar: CupertinoNavigationBar(
-          backgroundColor:
-              CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
-          border: null,
-          middle: const Text('座位预约须知'),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Text(rules.isEmpty
-                ? '请选择图书馆提供的预约时段。预约完成后，请在「我的座位」核对结果，并按图书馆要求到场签到。'
-                : rules),
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (context) => GlassPageScaffold(
+          navigationBar: CupertinoNavigationBar(
+            backgroundColor: CupertinoDynamicColor.resolve(
+              GlassPalette.barColor,
+              context,
+            ),
+            border: null,
+            middle: const Text('座位预约须知'),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                rules.isEmpty
+                    ? '请选择图书馆提供的预约时段。预约完成后，请在「我的座位」核对结果，并按图书馆要求到场签到。'
+                    : rules,
+              ),
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   Future<void> _showMore() async {
@@ -567,8 +599,10 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         },
         child: GlassPageScaffold(
           navigationBar: CupertinoNavigationBar(
-            backgroundColor:
-                CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
+            backgroundColor: CupertinoDynamicColor.resolve(
+              GlassPalette.barColor,
+              context,
+            ),
             border: null,
             automaticallyImplyLeading: false,
             leading: (_accessMessage == null &&
@@ -590,36 +624,41 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
                             }
                           },
                     child: Semantics(
-                        label: '返回',
-                        child:
-                            const Icon(CupertinoIcons.chevron_back, size: 22)),
+                      label: '返回',
+                      child: const Icon(CupertinoIcons.chevron_back, size: 22),
+                    ),
                   )
                 : null,
             middle: const Text('座位预约'),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (_busy)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: CupertinoActivityIndicator(),
-                )
-              else
-                CupertinoButton(
-                  key: const ValueKey('seat-refresh'),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  onPressed: _accessMessage != null ? null : _refresh,
-                  child: Semantics(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_busy)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: CupertinoActivityIndicator(),
+                  )
+                else
+                  CupertinoButton(
+                    key: const ValueKey('seat-refresh'),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    onPressed: _accessMessage != null ? null : _refresh,
+                    child: Semantics(
                       label: '刷新',
-                      child: const Icon(CupertinoIcons.refresh, size: 21)),
-                ),
-              CupertinoButton(
-                key: const ValueKey('seat-more'),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                onPressed: _busy ? null : _showMore,
-                child: Semantics(
+                      child: const Icon(CupertinoIcons.refresh, size: 21),
+                    ),
+                  ),
+                CupertinoButton(
+                  key: const ValueKey('seat-more'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  onPressed: _busy ? null : _showMore,
+                  child: Semantics(
                     label: '更多',
-                    child: const Icon(CupertinoIcons.ellipsis, size: 22)),
-              ),
-            ]),
+                    child: const Icon(CupertinoIcons.ellipsis, size: 22),
+                  ),
+                ),
+              ],
+            ),
           ),
           child: SafeArea(
             child: _accessMessage != null
@@ -629,90 +668,95 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
                       child: Text(_accessMessage!, textAlign: TextAlign.center),
                     ),
                   )
-                : Column(children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: GlassSurface(
-                          borderRadius: 22,
-                          padding: const EdgeInsets.all(3),
-                          child: CupertinoSlidingSegmentedControl<int>(
-                            backgroundColor: CupertinoColors.transparent,
-                            thumbColor: GlassPalette.surfaceColor(context),
+                : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: GlassSegmentedControl<int>(
                             key: const ValueKey('seat-section-tabs'),
                             groupValue: _section,
-                            children: const {
-                              0: Text('预约座位'),
-                              1: Text('我的座位'),
-                            },
-                            onValueChanged: (value) {
-                              if (_busy || value == null || value == _section) {
-                                return;
-                              }
-                              FocusManager.instance.primaryFocus?.unfocus();
-                              setState(() {
-                                _section = value;
-                                _error = null;
-                              });
-                              _resetScroll();
-                              if (value == 1) unawaited(_loadReservations());
-                            },
+                            children: const {0: Text('预约座位'), 1: Text('我的座位')},
+                            onValueChanged: _busy
+                                ? null
+                                : (value) {
+                                    if (value == _section) {
+                                      return;
+                                    }
+                                    FocusManager.instance.primaryFocus
+                                        ?.unfocus();
+                                    setState(() {
+                                      _section = value;
+                                      _error = null;
+                                    });
+                                    _resetScroll();
+                                    if (value == 1) {
+                                      unawaited(_loadReservations());
+                                    }
+                                  },
                           ),
                         ),
                       ),
-                    ),
-                    if (_section == 0 &&
-                        MediaQuery.viewInsetsOf(context).bottom == 0)
-                      LibraryStepHeader(
-                        key: const ValueKey('seat-step-header'),
-                        steps: const ['选择阅览区', '选择时段和座位'],
-                        currentStep: _bookingStep,
-                        showBackButton: false,
-                        onBack:
-                            _bookingStep == 1 && !_busy ? _backToAreas : null,
-                      ),
-                    Expanded(
-                      child: ListView(
-                        key: const ValueKey('seat-content'),
-                        controller: _scroll,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                        children: [
-                          if (_busy)
-                            const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Text('正在处理，请稍候…',
-                                  textAlign: TextAlign.center),
-                            ),
-                          if (_error != null)
-                            _panel([
-                              Text(_error!,
-                                  style: TextStyle(
-                                      color: CupertinoDynamicColor.resolve(
-                                          CupertinoColors.systemRed, context))),
-                              CupertinoButton(
-                                key: const ValueKey('seat-retry'),
-                                onPressed: _busy ? null : _retry,
-                                child: const Text('重试'),
+                      if (_section == 0 &&
+                          MediaQuery.viewInsetsOf(context).bottom == 0)
+                        LibraryStepHeader(
+                          key: const ValueKey('seat-step-header'),
+                          steps: const ['选择阅览区', '选择时段和座位'],
+                          currentStep: _bookingStep,
+                          showBackButton: false,
+                          onBack:
+                              _bookingStep == 1 && !_busy ? _backToAreas : null,
+                        ),
+                      Expanded(
+                        child: ListView(
+                          key: const ValueKey('seat-content'),
+                          controller: _scroll,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                          children: [
+                            if (_busy)
+                              const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text(
+                                  '正在处理，请稍候…',
+                                  textAlign: TextAlign.center,
+                                ),
                               ),
-                            ]),
-                          if (_section == 0)
-                            ...(_bookingStep == 0
-                                ? _directoryWidgets()
-                                : _selectionWidgets())
-                          else
-                            ..._mineWidgets(),
-                        ],
+                            if (_error != null)
+                              _panel([
+                                Text(
+                                  _error!,
+                                  style: TextStyle(
+                                    color: CupertinoDynamicColor.resolve(
+                                      CupertinoColors.systemRed,
+                                      context,
+                                    ),
+                                  ),
+                                ),
+                                CupertinoButton(
+                                  key: const ValueKey('seat-retry'),
+                                  onPressed: _busy ? null : _retry,
+                                  child: const Text('重试'),
+                                ),
+                              ]),
+                            if (_section == 0)
+                              ...(_bookingStep == 0
+                                  ? _directoryWidgets()
+                                  : _selectionWidgets())
+                            else
+                              ..._mineWidgets(),
+                          ],
+                        ),
                       ),
-                    ),
-                    if (_section == 0 &&
-                        _bookingStep == 1 &&
-                        _segment != null &&
-                        MediaQuery.viewInsetsOf(context).bottom == 0)
-                      _submissionBar(),
-                  ]),
+                      if (_section == 0 &&
+                          _bookingStep == 1 &&
+                          _segment != null &&
+                          MediaQuery.viewInsetsOf(context).bottom == 0)
+                        _submissionBar(),
+                    ],
+                  ),
           ),
         ),
       );
@@ -721,7 +765,9 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
       );
 
   Widget _heading(String text) => Padding(
@@ -731,26 +777,34 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
 
   Widget _note(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Text(text,
-            style: TextStyle(
-                fontSize: 13,
-                color: CupertinoDynamicColor.resolve(
-                    CupertinoColors.secondaryLabel, context))),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            color: GlassPalette.secondaryLabel(context),
+          ),
+        ),
       );
 
   Widget _selection(
-          String key, String label, String value, VoidCallback action) =>
+    String key,
+    String label,
+    String value,
+    VoidCallback action,
+  ) =>
       CupertinoButton(
         key: ValueKey(key),
         padding: const EdgeInsets.symmetric(vertical: 10),
         onPressed: _busy ? null : action,
-        child: Row(children: [
-          Text(label, style: CupertinoTheme.of(context).textTheme.textStyle),
-          const SizedBox(width: 12),
-          Expanded(child: Text(value, textAlign: TextAlign.right)),
-          const SizedBox(width: 6),
-          const Icon(CupertinoIcons.chevron_down, size: 14),
-        ]),
+        child: Row(
+          children: [
+            Text(label, style: CupertinoTheme.of(context).textTheme.textStyle),
+            const SizedBox(width: 12),
+            Expanded(child: Text(value, textAlign: TextAlign.right)),
+            const SizedBox(width: 6),
+            const Icon(CupertinoIcons.chevron_down, size: 14),
+          ],
+        ),
       );
 
   // Partition into fresh lists so each group keeps the server's order.
@@ -787,12 +841,16 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
             ? null
             : entry.value.values
                 .map(
-                    (area) => free ? area.floorFreeSeats : area.floorTotalSeats)
+                  (area) => free ? area.floorFreeSeats : area.floorTotalSeats,
+                )
                 .whereType<int>()
                 .firstOrNull;
         return official ??
-            sumComplete(entry.value.values
-                .map((area) => free ? area.freeSeats : area.totalSeats));
+            sumComplete(
+              entry.value.values.map(
+                (area) => free ? area.freeSeats : area.totalSeats,
+              ),
+            );
       }
 
       return consistent(count(true), count(false));
@@ -808,7 +866,7 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
     if (catalog == null) return [];
     if (catalog.dates.isEmpty || catalog.buildings.isEmpty) {
       return [
-        _panel([const Text('图书馆目前没有开放可预约的馆区或日期。')])
+        _panel([const Text('图书馆目前没有开放可预约的馆区或日期。')]),
       ];
     }
     final floors = <String, List<LibrarySeatArea>>{};
@@ -822,7 +880,11 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
     return [
       _panel([
         _selection(
-            'seat-building', '馆区', _building?.name ?? '请选择', _chooseBuilding),
+          'seat-building',
+          '馆区',
+          _building?.name ?? '请选择',
+          _chooseBuilding,
+        ),
         _selection('seat-date', '日期', _date ?? '请选择', _chooseDate),
       ]),
       if (floors.isNotEmpty) ...[
@@ -854,28 +916,33 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
                 _busy || !area.canReserve || area.unsupportedReason != null
                     ? null
                     : () => _openArea(area),
-            child: Row(children: [
-              Expanded(
+            child: Row(
+              children: [
+                Expanded(
                   child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(area.name),
-                  if (area.typeCategory == '1')
-                    _note(
-                        '可用/总数 · ${_seatCountsLabel(area.freeSeats, area.totalSeats)}'),
-                  if (area.unsupportedReason != null)
-                    _note(area.unsupportedReason!)
-                  else if (!area.canReserve)
-                    _note('暂不可预约'),
-                ],
-              )),
-              const SizedBox(width: 8),
-              Icon(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(area.name),
+                      if (area.typeCategory == '1')
+                        _note(
+                          '可用/总数 · ${_seatCountsLabel(area.freeSeats, area.totalSeats)}',
+                        ),
+                      if (area.unsupportedReason != null)
+                        _note(area.unsupportedReason!)
+                      else if (!area.canReserve)
+                        _note('暂不可预约'),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
                   _area?.id == area.id
                       ? CupertinoIcons.check_mark_circled_solid
                       : CupertinoIcons.chevron_forward,
-                  size: 20),
-            ]),
+                  size: 20,
+                ),
+              ],
+            ),
           ),
       ]),
     ];
@@ -892,23 +959,32 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         <LibrarySeatSegment>[];
     return [
       _panel([
-        Row(children: [
-          Expanded(
-              child: Text(area.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600))),
-          CupertinoButton(
-            key: const ValueKey('seat-rules'),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            onPressed: _busy ? null : _showRules,
-            child: Semantics(
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                area.name,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            CupertinoButton(
+              key: const ValueKey('seat-rules'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              onPressed: _busy ? null : _showRules,
+              child: Semantics(
                 label: '查看预约须知',
-                child: const Text('须知', style: TextStyle(fontSize: 14))),
-          ),
-        ]),
-        _note([_building?.name, area.floorName, _date]
-            .whereType<String>()
-            .where((text) => text.isNotEmpty)
-            .join(' · ')),
+                child: const Text('须知', style: TextStyle(fontSize: 14)),
+              ),
+            ),
+          ],
+        ),
+        _note(
+          [
+            _building?.name,
+            area.floorName,
+            _date,
+          ].whereType<String>().where((text) => text.isNotEmpty).join(' · '),
+        ),
         if (availability != null) ...[
           const SizedBox(height: 4),
           if (availability.unsupportedReason != null)
@@ -918,42 +994,54 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
           else if (segments.isEmpty)
             const Text('所选日期暂无预约时段，请返回选择其他日期或阅览区。')
           else
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final segment in segments)
-                Semantics(
-                  selected: _segment?.id == segment.id,
-                  child: DecoratedBox(
-                    decoration: GlassPalette.decoration(
-                      context,
-                      radius: 16,
-                      selected: _segment?.id == segment.id,
-                    ),
-                    child: CupertinoButton(
-                      key: ValueKey('seat-segment-${segment.id}'),
-                      borderRadius: BorderRadius.circular(16),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 9),
-                      onPressed: _busy || !segment.canReserve
-                          ? null
-                          : () {
-                              if (_segment?.id != segment.id) {
-                                unawaited(_loadSeats(segment));
-                              }
-                            },
-                      child: Text('${segment.startTime}–${segment.endTime}',
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final segment in segments)
+                  Semantics(
+                    selected: _segment?.id == segment.id,
+                    child: DecoratedBox(
+                      decoration: GlassPalette.decoration(
+                        context,
+                        radius: GlassGeometry.compactRadius,
+                        selected: _segment?.id == segment.id,
+                      ),
+                      child: CupertinoButton(
+                        key: ValueKey('seat-segment-${segment.id}'),
+                        borderRadius: BorderRadius.circular(
+                          GlassGeometry.compactRadius,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                        onPressed: _busy || !segment.canReserve
+                            ? null
+                            : () {
+                                if (_segment?.id != segment.id) {
+                                  unawaited(_loadSeats(segment));
+                                }
+                              },
+                        child: Text(
+                          '${segment.startTime}–${segment.endTime}',
                           style: TextStyle(
-                              fontSize: 14,
-                              color: CupertinoDynamicColor.resolve(
-                                  _busy || !segment.canReserve
-                                      ? CupertinoColors.secondaryLabel
-                                      : _segment?.id == segment.id
-                                          ? GlassPalette.accent
-                                          : CupertinoColors.label,
-                                  context))),
+                            fontSize: 14,
+                            color: CupertinoDynamicColor.resolve(
+                              _busy || !segment.canReserve
+                                  ? CupertinoColors.secondaryLabel
+                                  : _segment?.id == segment.id
+                                      ? GlassPalette.accentColor(context)
+                                      : CupertinoColors.label,
+                              context,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-            ]),
+              ],
+            ),
           ...segments
               .where((segment) => !segment.canReserve)
               .map((segment) => segment.unavailableReason ?? '此时段暂不可预约。')
@@ -969,10 +1057,12 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
   Widget _seatPanel() {
     final query = _search.text.trim().toLowerCase();
     final matches = _availableFirst(_seats, (seat) => seat.canReserve)
-        .where((seat) =>
-            query.isEmpty ||
-            seat.name.toLowerCase().contains(query) ||
-            seat.labels.any((label) => label.toLowerCase().contains(query)))
+        .where(
+          (seat) =>
+              query.isEmpty ||
+              seat.name.toLowerCase().contains(query) ||
+              seat.labels.any((label) => label.toLowerCase().contains(query)),
+        )
         .toList();
     final pageCount = (matches.length / _seatsPerPage).ceil().clamp(1, 1000000);
     final page = _seatPage.clamp(0, pageCount - 1);
@@ -989,9 +1079,9 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
             '可用/总数 · ${_hasLoadedSeats ? _seatCountsLabel(matches.where((seat) => seat.canReserve).length, matches.length) : '—/—'}',
             key: const ValueKey('seat-result-count'),
             style: TextStyle(
-                fontSize: 13,
-                color: CupertinoDynamicColor.resolve(
-                    CupertinoColors.secondaryLabel, context)),
+              fontSize: 13,
+              color: GlassPalette.secondaryLabel(context),
+            ),
           ),
         ],
       ),
@@ -999,7 +1089,7 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
       CupertinoSearchTextField(
         key: const ValueKey('seat-search'),
         backgroundColor: GlassPalette.fieldColor(context),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(GlassGeometry.compactRadius),
         controller: _search,
         enabled: !_busy,
         placeholder: '座位号或设施',
@@ -1007,51 +1097,63 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
       ),
       const SizedBox(height: 12),
       if (matches.isEmpty && !_busy && _error == null) const Text('没有符合条件的座位。'),
-      LayoutBuilder(builder: (context, constraints) {
-        final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
-        final columns = (constraints.maxWidth / (106 * scale.clamp(1, 1.2)))
-            .floor()
-            .clamp(1, 6);
-        final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
-        return Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final seat in visible)
-            SizedBox(
-                width: width,
-                height: 106 * scale.clamp(1, 4),
-                child: _seatTile(seat)),
-        ]);
-      }),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+          final columns = (constraints.maxWidth / (106 * scale.clamp(1, 1.2)))
+              .floor()
+              .clamp(1, 6);
+          final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final seat in visible)
+                SizedBox(
+                  width: width,
+                  height: 106 * scale.clamp(1, 4),
+                  child: _seatTile(seat),
+                ),
+            ],
+          );
+        },
+      ),
       if (matches.isNotEmpty) ...[
         const SizedBox(height: 12),
-        Row(children: [
-          CupertinoButton(
-            key: const ValueKey('seat-page-previous'),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            onPressed: _busy || page == 0
-                ? null
-                : () {
-                    setState(() => _seatPage = page - 1);
-                    FocusManager.instance.primaryFocus?.unfocus();
-                  },
-            child: const Text('上一页', style: TextStyle(fontSize: 14)),
-          ),
-          Expanded(
-              child: Text('${page + 1} / $pageCount',
-                  key: const ValueKey('seat-page-count'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13))),
-          CupertinoButton(
-            key: const ValueKey('seat-page-next'),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            onPressed: _busy || page + 1 >= pageCount
-                ? null
-                : () {
-                    setState(() => _seatPage = page + 1);
-                    FocusManager.instance.primaryFocus?.unfocus();
-                  },
-            child: const Text('下一页', style: TextStyle(fontSize: 14)),
-          ),
-        ]),
+        Row(
+          children: [
+            CupertinoButton(
+              key: const ValueKey('seat-page-previous'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              onPressed: _busy || page == 0
+                  ? null
+                  : () {
+                      setState(() => _seatPage = page - 1);
+                      FocusManager.instance.primaryFocus?.unfocus();
+                    },
+              child: const Text('上一页', style: TextStyle(fontSize: 14)),
+            ),
+            Expanded(
+              child: Text(
+                '${page + 1} / $pageCount',
+                key: const ValueKey('seat-page-count'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            CupertinoButton(
+              key: const ValueKey('seat-page-next'),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              onPressed: _busy || page + 1 >= pageCount
+                  ? null
+                  : () {
+                      setState(() => _seatPage = page + 1);
+                      FocusManager.instance.primaryFocus?.unfocus();
+                    },
+              child: const Text('下一页', style: TextStyle(fontSize: 14)),
+            ),
+          ],
+        ),
       ],
     ]);
   }
@@ -1065,62 +1167,80 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
       label:
           '${seat.name}，$status${seat.labels.isEmpty ? '' : '，${seat.labels.join('、')}'}',
       child: DecoratedBox(
-        decoration:
-            GlassPalette.decoration(context, radius: 16, selected: selected),
+        decoration: GlassPalette.decoration(
+          context,
+          radius: GlassGeometry.compactRadius,
+          selected: selected,
+        ),
         child: CupertinoButton(
           key: ValueKey('seat-item-${seat.id}'),
           padding: const EdgeInsets.all(8),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(GlassGeometry.compactRadius),
           onPressed: _busy || !seat.canReserve
               ? null
               : () => setState(() {
                     _seat = seat;
                   }),
           child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
                   Expanded(
-                      child: Text(seat.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight:
-                                  selected ? FontWeight.w600 : FontWeight.w400,
-                              color: CupertinoDynamicColor.resolve(
-                                  _busy || !seat.canReserve
-                                      ? CupertinoColors.secondaryLabel
-                                      : selected
-                                          ? GlassPalette.accent
-                                          : CupertinoColors.label,
-                                  context)))),
-                  if (selected)
-                    const Padding(
-                        padding: EdgeInsets.only(left: 3),
-                        child: Icon(CupertinoIcons.check_mark_circled_solid,
-                            size: 16)),
-                ]),
-                const SizedBox(height: 4),
-                Text(status,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel, context))),
-                if (seat.labels.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(seat.labels.join(' · '),
-                      maxLines: 1,
+                    child: Text(
+                      seat.name,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 11,
-                          color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.secondaryLabel, context))),
+                        fontSize: 15,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                        color: CupertinoDynamicColor.resolve(
+                          _busy || !seat.canReserve
+                              ? CupertinoColors.secondaryLabel
+                              : selected
+                                  ? GlassPalette.accentColor(context)
+                                  : CupertinoColors.label,
+                          context,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (selected)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 3),
+                      child: Icon(
+                        CupertinoIcons.check_mark_circled_solid,
+                        size: 16,
+                      ),
+                    ),
                 ],
-              ]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: GlassPalette.secondaryLabel(context),
+                ),
+              ),
+              if (seat.labels.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  seat.labels.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: GlassPalette.secondaryLabel(context),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1131,53 +1251,64 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
         margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         blur: true,
-        child: LayoutBuilder(builder: (context, constraints) {
-          final summary = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_seat == null ? '请选择座位' : '已选座位：${_seat!.name}',
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final summary = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _seat == null ? '请选择座位' : '已选座位：${_seat!.name}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14)),
-              const SizedBox(height: 3),
-              Text(
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 3),
+                Text(
                   '${_segment!.date} ${_segment!.startTime}–${_segment!.endTime}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoDynamicColor.resolve(
-                          CupertinoColors.secondaryLabel, context))),
-              if (_submissionUncertain)
-                Text('结果待确认，请先查看「我的座位」。',
+                    fontSize: 12,
+                    color: GlassPalette.secondaryLabel(context),
+                  ),
+                ),
+                if (_submissionUncertain)
+                  Text(
+                    '结果待确认，请先查看「我的座位」。',
                     style: TextStyle(
-                        fontSize: 12,
-                        color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.secondaryLabel, context))),
-            ],
-          );
-          final button = CupertinoButton.filled(
-            key: const ValueKey('seat-submit'),
-            borderRadius: BorderRadius.circular(18),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            onPressed:
-                _busy || _seat == null || _submissionUncertain ? null : _submit,
-            child: const Text('确认预约'),
-          );
-          if (constraints.maxWidth < 330 ||
-              MediaQuery.textScalerOf(context).scale(14) > 20) {
-            return Column(
+                      fontSize: 12,
+                      color: GlassPalette.secondaryLabel(context),
+                    ),
+                  ),
+              ],
+            );
+            final button = CupertinoButton.filled(
+              key: const ValueKey('seat-submit'),
+              borderRadius: BorderRadius.circular(GlassGeometry.compactRadius),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              onPressed: _busy || _seat == null || _submissionUncertain
+                  ? null
+                  : _submit,
+              child: const Text('确认预约'),
+            );
+            if (constraints.maxWidth < 330 ||
+                MediaQuery.textScalerOf(context).scale(14) > 20) {
+              return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [summary, const SizedBox(height: 8), button]);
-          }
-          return Row(children: [
-            Expanded(child: summary),
-            const SizedBox(width: 12),
-            button
-          ]);
-        }),
+                children: [summary, const SizedBox(height: 8), button],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: summary),
+                const SizedBox(width: 12),
+                button,
+              ],
+            );
+          },
+        ),
       );
 
   List<Widget> _mineWidgets() => [
@@ -1189,7 +1320,8 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
           _panel([
             _heading('${reservation.areaName} · ${reservation.seatName}'),
             Text(
-                '${reservation.date} ${reservation.startTime}–${reservation.endTime}'),
+              '${reservation.date} ${reservation.startTime}–${reservation.endTime}',
+            ),
             const SizedBox(height: 8),
             Text(reservation.status),
             if (_uncertainCancellations.contains(reservation.id))
@@ -1198,10 +1330,15 @@ class _LibrarySeatPageState extends State<LibrarySeatPage> {
               CupertinoButton(
                 key: ValueKey('seat-cancel-${reservation.id}'),
                 onPressed: _busy ? null : () => unawaited(_cancel(reservation)),
-                child: Text('取消预约',
-                    style: TextStyle(
-                        color: CupertinoDynamicColor.resolve(
-                            CupertinoColors.systemRed, context))),
+                child: Text(
+                  '取消预约',
+                  style: TextStyle(
+                    color: CupertinoDynamicColor.resolve(
+                      CupertinoColors.systemRed,
+                      context,
+                    ),
+                  ),
+                ),
               )
             else if (reservation.cancellationReason?.isNotEmpty ?? false)
               _note(reservation.cancellationReason!),

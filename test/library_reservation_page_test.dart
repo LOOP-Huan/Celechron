@@ -219,6 +219,15 @@ class _FakeLibraryBookingClient implements LibraryBookingClient {
   void dispose() => disposeCalls++;
 }
 
+void _expectSectionSemantics(WidgetTester tester,
+    {required String selected, bool enabled = true}) {
+  for (final label in const ['预约研讨间', '我的预约']) {
+    final node = tester.getSemantics(find.bySemanticsLabel(label));
+    expect(node.flagsCollection.isSelected.toBoolOrNull(), label == selected);
+    expect(node.flagsCollection.isEnabled.toBoolOrNull(), enabled);
+  }
+}
+
 Future<void> _openPage(WidgetTester tester, _FakeLibraryBookingClient client,
     {double textScale = 1,
     Scholar? scholar,
@@ -921,50 +930,58 @@ void main() {
   });
 
   testWidgets('提交处理中不能重复预约，完成后显示预约记录', (tester) async {
-    final pending = Completer<String>();
-    final client = _FakeLibraryBookingClient()..pendingSubmission = pending;
-    await _openPage(tester, client);
-    await _prepareDraft(tester);
-    await tester.tap(find.byKey(const ValueKey('library-submit')));
-    await _pumpDialog(tester);
-    await tester.tap(find.text('提交预约'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+    final semantics = tester.ensureSemantics();
+    try {
+      final pending = Completer<String>();
+      final client = _FakeLibraryBookingClient()..pendingSubmission = pending;
+      await _openPage(tester, client);
+      await _prepareDraft(tester);
+      _expectSectionSemantics(tester, selected: '预约研讨间');
+      await tester.tap(find.byKey(const ValueKey('library-submit')));
+      await _pumpDialog(tester);
+      await tester.tap(find.text('提交预约'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    expect(client.submitCalls, 1);
-    final submit = find.byKey(const ValueKey('library-submit'));
-    expect(tester.widget<CupertinoButton>(submit).onPressed, isNull);
-    expect(
-        tester
-            .widget<CupertinoButton>(
-                find.byKey(const ValueKey('library-navigation-back')))
-            .onPressed,
-        isNull);
-    await tester.binding.handlePopRoute();
-    await tester.pump();
-    expect(submit, findsOneWidget);
-    await tester.tap(find.text('我的预约'));
-    await tester.pump();
-    expect(client.reservationCalls, 0);
-    await tester.ensureVisible(submit);
-    await tester.pump();
-    await tester.tap(submit);
-    await tester.pump();
-    expect(client.submitCalls, 1);
-    expect(find.text('确认预约'), findsNothing);
+      expect(client.submitCalls, 1);
+      _expectSectionSemantics(tester, selected: '预约研讨间', enabled: false);
+      final submit = find.byKey(const ValueKey('library-submit'));
+      expect(tester.widget<CupertinoButton>(submit).onPressed, isNull);
+      expect(
+          tester
+              .widget<CupertinoButton>(
+                  find.byKey(const ValueKey('library-navigation-back')))
+              .onPressed,
+          isNull);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(submit, findsOneWidget);
+      await tester.tap(find.text('我的预约'));
+      await tester.pump();
+      expect(client.reservationCalls, 0);
+      await tester.ensureVisible(submit);
+      await tester.pump();
+      await tester.tap(submit);
+      await tester.pump();
+      expect(client.submitCalls, 1);
+      expect(find.text('确认预约'), findsNothing);
 
-    pending.complete('预约成功');
-    await _pumpDialog(tester);
-    await tester.tap(find.text('知道了'));
-    await tester.pumpAndSettle();
-    expect(client.submittedDraft?.room.id, _room.id);
-    expect(client.submittedDraft?.content, '课程项目小组讨论');
-    expect(client.reservationCalls, greaterThanOrEqualTo(1));
-    await tester.tap(find.text('预约研讨间'));
-    await tester.pumpAndSettle();
-    expect(
-        find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
-    expect(find.byKey(const ValueKey('library-submit')), findsNothing);
+      pending.complete('预约成功');
+      await _pumpDialog(tester);
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      _expectSectionSemantics(tester, selected: '我的预约');
+      expect(client.submittedDraft?.room.id, _room.id);
+      expect(client.submittedDraft?.content, '课程项目小组讨论');
+      expect(client.reservationCalls, greaterThanOrEqualTo(1));
+      await tester.tap(find.text('预约研讨间'));
+      await tester.pumpAndSettle();
+      expect(
+          find.byKey(const ValueKey('library-room-test-room')), findsOneWidget);
+      expect(find.byKey(const ValueKey('library-submit')), findsNothing);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets('提交结果未知时引导查询记录，且不会自动重发预约', (tester) async {

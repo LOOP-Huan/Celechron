@@ -51,6 +51,8 @@
 	<string>Celechron需要访问您的日历来同步课程表信息</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Celechron需要访问通讯录来设置事件参与者</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>选择照片作为应用背景，仅保存在本机，不会上传。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

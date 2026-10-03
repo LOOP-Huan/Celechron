@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/custom_decoration.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/page/flow/flow_controller.dart';
@@ -219,7 +220,8 @@ class TaskPage extends StatelessWidget {
                     color: deadline.status == TaskStatus.completed
                         ? CupertinoColors.systemOrange
                         : CupertinoColors.systemGreen,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                        BorderRadius.circular(GlassGeometry.surfaceRadius),
                   ),
                   child: Container(
                     width: 36,
@@ -245,7 +247,7 @@ class TaskPage extends StatelessWidget {
             padding: const EdgeInsets.only(right: 16),
             decoration: BoxDecoration(
               color: CupertinoColors.systemRed,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(GlassGeometry.surfaceRadius),
             ),
             child: Container(
               width: 36,

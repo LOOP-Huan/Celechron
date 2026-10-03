@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/glass_list_section.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/persistent_headers.dart';
@@ -23,11 +24,7 @@ class DateTimePair {
 class DateTimePairEditDialog extends StatefulWidget {
   final DateTimePair val;
   final Function(DateTimePair pair)? onChanged;
-  const DateTimePairEditDialog({
-    super.key,
-    required this.val,
-    this.onChanged,
-  });
+  const DateTimePairEditDialog({super.key, required this.val, this.onChanged});
   @override
   State<DateTimePairEditDialog> createState() => _DateTimePairEditDialogState();
 }
@@ -49,9 +46,7 @@ class _DateTimePairEditDialogState extends State<DateTimePairEditDialog> {
   @override
   Widget build(BuildContext context) {
     return CupertinoAlertDialog(
-      title: const Text(
-        '更改时段',
-      ),
+      title: const Text('更改时段'),
       content: StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) {
           return SizedBox(
@@ -65,41 +60,38 @@ class _DateTimePairEditDialogState extends State<DateTimePairEditDialog> {
                   children: [
                     Text(
                       '开始：${timeToString(val.first)}',
-                      style: CupertinoTheme.of(context)
-                          .textTheme
-                          .textStyle
-                          .copyWith(
-                            fontSize: 16,
-                          ),
+                      style: CupertinoTheme.of(
+                        context,
+                      ).textTheme.textStyle.copyWith(fontSize: 16),
                     ),
                     CupertinoButton(
                       onPressed: () async {
                         await showCupertinoModalPopup(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return GlassSurface(
-                                blur: true,
-                                borderRadius: 28,
-                                child: SizedBox(
-                                  height: MediaQuery.of(context)
-                                          .copyWith()
-                                          .size
-                                          .height /
-                                      3,
-                                  child: CupertinoDatePicker(
-                                    initialDateTime: val.first,
-                                    use24hFormat: true,
-                                    minuteInterval: 1,
-                                    mode: CupertinoDatePickerMode.time,
-                                    onDateTimeChanged: (DateTime newTime) {
-                                      setState(() {
-                                        val.first = newTime;
-                                      });
-                                    },
-                                  ),
+                          context: context,
+                          builder: (BuildContext context) {
+                            return GlassSurface(
+                              blur: true,
+                              borderRadius: GlassGeometry.surfaceRadius,
+                              child: SizedBox(
+                                height: MediaQuery.of(
+                                      context,
+                                    ).copyWith().size.height /
+                                    3,
+                                child: CupertinoDatePicker(
+                                  initialDateTime: val.first,
+                                  use24hFormat: true,
+                                  minuteInterval: 1,
+                                  mode: CupertinoDatePickerMode.time,
+                                  onDateTimeChanged: (DateTime newTime) {
+                                    setState(() {
+                                      val.first = newTime;
+                                    });
+                                  },
                                 ),
-                              );
-                            });
+                              ),
+                            );
+                          },
+                        );
                       },
                       child: const Text('更改'),
                     ),
@@ -110,41 +102,38 @@ class _DateTimePairEditDialogState extends State<DateTimePairEditDialog> {
                   children: [
                     Text(
                       '结束：${timeToString(val.second)}',
-                      style: CupertinoTheme.of(context)
-                          .textTheme
-                          .textStyle
-                          .copyWith(
-                            fontSize: 16,
-                          ),
+                      style: CupertinoTheme.of(
+                        context,
+                      ).textTheme.textStyle.copyWith(fontSize: 16),
                     ),
                     CupertinoButton(
                       onPressed: () async {
                         await showCupertinoModalPopup(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return GlassSurface(
-                                blur: true,
-                                borderRadius: 28,
-                                child: SizedBox(
-                                  height: MediaQuery.of(context)
-                                          .copyWith()
-                                          .size
-                                          .height /
-                                      3,
-                                  child: CupertinoDatePicker(
-                                    initialDateTime: val.second,
-                                    use24hFormat: true,
-                                    minuteInterval: 1,
-                                    mode: CupertinoDatePickerMode.time,
-                                    onDateTimeChanged: (DateTime newTime) {
-                                      setState(() {
-                                        val.second = newTime;
-                                      });
-                                    },
-                                  ),
+                          context: context,
+                          builder: (BuildContext context) {
+                            return GlassSurface(
+                              blur: true,
+                              borderRadius: GlassGeometry.surfaceRadius,
+                              child: SizedBox(
+                                height: MediaQuery.of(
+                                      context,
+                                    ).copyWith().size.height /
+                                    3,
+                                child: CupertinoDatePicker(
+                                  initialDateTime: val.second,
+                                  use24hFormat: true,
+                                  minuteInterval: 1,
+                                  mode: CupertinoDatePickerMode.time,
+                                  onDateTimeChanged: (DateTime newTime) {
+                                    setState(() {
+                                      val.second = newTime;
+                                    });
+                                  },
                                 ),
-                              );
-                            });
+                              ),
+                            );
+                          },
+                        );
                       },
                       child: const Text('更改'),
                     ),
@@ -189,10 +178,12 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
   void getAllowTime() {
     now.clear();
     for (var x in _optionController.allowTime.keys) {
-      now.add(DateTimePair(
-        first: x.copyWith(),
-        second: _optionController.allowTime[x]!.copyWith(),
-      ));
+      now.add(
+        DateTimePair(
+          first: x.copyWith(),
+          second: _optionController.allowTime[x]!.copyWith(),
+        ),
+      );
     }
     now.sort((DateTimePair a, DateTimePair b) {
       if (a.first.compareTo(b.first) != 0) {
@@ -212,16 +203,14 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
           context: context,
           builder: (BuildContext context) {
             return CupertinoAlertDialog(
-              title: const Text(
-                '开始时间必须早于结束时间',
-              ),
+              title: const Text('开始时间必须早于结束时间'),
               actions: [
                 CupertinoDialogAction(
                   child: const Text('确定'),
                   onPressed: () async {
                     Navigator.of(context).pop();
                   },
-                )
+                ),
               ],
             );
           },
@@ -239,16 +228,14 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
             context: context,
             builder: (BuildContext context) {
               return CupertinoAlertDialog(
-                title: const Text(
-                  '时间段之间不能有重合或直接相邻',
-                ),
+                title: const Text('时间段之间不能有重合或直接相邻'),
                 actions: [
                   CupertinoDialogAction(
                     child: const Text('确定'),
                     onPressed: () async {
                       Navigator.of(context).pop();
                     },
-                  )
+                  ),
                 ],
               );
             },
@@ -291,9 +278,9 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
                     child: Text(
                       '可用工作时段列表',
                       style: TextStyle(
-                          color: CupertinoDynamicColor.resolve(
-                              CupertinoColors.secondaryLabel, context),
-                          fontSize: 14),
+                        color: GlassPalette.secondaryLabel(context),
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   children: [
@@ -301,7 +288,8 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
                       now.length,
                       (index) => CupertinoFormRow(
                         prefix: Text(
-                            '${timeToString(now[index].first)} - ${timeToString(now[index].second)}'),
+                          '${timeToString(now[index].first)} - ${timeToString(now[index].second)}',
+                        ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
@@ -354,11 +342,13 @@ class _AllowTimeEditPageState extends State<AllowTimeEditPage> {
                 const SizedBox(height: 8),
                 CupertinoButton(
                   onPressed: () {
-                    now.add(DateTimePair(
-                      first: DateTime(0, 0, 0, 8, 0),
-                      second: DateTime(0, 0, 0, 12, 0),
-                      isDeleted: false,
-                    ));
+                    now.add(
+                      DateTimePair(
+                        first: DateTime(0, 0, 0, 8, 0),
+                        second: DateTime(0, 0, 0, 12, 0),
+                        isDeleted: false,
+                      ),
+                    );
                     setState(() {});
                   },
                   child: const Text('添加一个时段'),

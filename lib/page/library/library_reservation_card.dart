@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/model/scholar.dart';
 import 'package:flutter/cupertino.dart';
@@ -51,14 +52,18 @@ class LibraryReservationCard extends StatelessWidget {
         child: Row(
           children: [
             DecoratedBox(
-              decoration:
-                  GlassPalette.decoration(context, radius: 16, selected: true),
+              decoration: GlassPalette.decoration(
+                context,
+                radius: GlassGeometry.compactRadius,
+                selected: true,
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(10),
-                child: Icon(CupertinoIcons.book,
-                    size: 26,
-                    color: CupertinoDynamicColor.resolve(
-                        GlassPalette.accent, context)),
+                child: Icon(
+                  CupertinoIcons.book,
+                  size: 26,
+                  color: GlassPalette.accentColor(context),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -68,17 +73,15 @@ class LibraryReservationCard extends StatelessWidget {
                 children: [
                   Text(
                     '图书馆预约',
-                    style: CupertinoTheme.of(context)
-                        .textTheme
-                        .textStyle
-                        .copyWith(fontWeight: FontWeight.w600),
+                    style: CupertinoTheme.of(
+                      context,
+                    ).textTheme.textStyle.copyWith(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '座位与研讨间',
                     style: TextStyle(
-                      color: CupertinoDynamicColor.resolve(
-                          CupertinoColors.secondaryLabel, context),
+                      color: GlassPalette.secondaryLabel(context),
                       fontSize: 13,
                     ),
                   ),

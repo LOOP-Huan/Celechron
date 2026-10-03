@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -230,7 +231,7 @@ class WeightedGpaPage extends StatelessWidget {
                             child: GlassSurface(
                               padding: const EdgeInsets.only(
                                   left: 12, right: 12, bottom: 16, top: 8),
-                              borderRadius: 20,
+                              borderRadius: GlassGeometry.surfaceRadius,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [

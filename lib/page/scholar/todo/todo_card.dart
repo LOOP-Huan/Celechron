@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/model/todo.dart';
 import 'package:celechron/utils/utils.dart';
@@ -12,7 +13,7 @@ class TodoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GlassSurface(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      borderRadius: 20,
+      borderRadius: GlassGeometry.surfaceRadius,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,

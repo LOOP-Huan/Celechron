@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/liquid_glass.dart';
 import 'package:celechron/design/persistent_headers.dart';
 import 'package:flutter/cupertino.dart';
@@ -78,7 +79,7 @@ class CustomLicensePage extends StatelessWidget {
                     height: 24,
                   ),
                   GlassSurface(
-                    borderRadius: 20,
+                    borderRadius: GlassGeometry.surfaceRadius,
                     child: CupertinoButton(
                       child: const Text('查看 GPLv3 协议全文'),
                       onPressed: () async {

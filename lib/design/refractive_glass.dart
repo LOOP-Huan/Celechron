@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'glass_geometry.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -14,7 +16,7 @@ class RefractiveGlass extends StatefulWidget {
   const RefractiveGlass({
     super.key,
     required this.child,
-    this.borderRadius = 24,
+    this.borderRadius = GlassGeometry.surfaceRadius,
     this.enabled = true,
     this.refraction = 1.15,
     this.blurSigma = 0.9,

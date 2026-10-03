@@ -1,3 +1,4 @@
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart' show Icons;
@@ -46,35 +47,37 @@ class _HomePageState extends State<HomePage> {
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
     var fuse = Get.find<Rx<Fuse>>(tag: 'fuse');
-    var response =
-        await fuse.value.checkUpdate().whenComplete(() => fuse.refresh());
+    var response = await fuse.value.checkUpdate().whenComplete(
+          () => fuse.refresh(),
+        );
     if (response != null) {
       if (!mounted) return;
       showCupertinoDialog(
-          context: context,
-          builder: (context) {
-            return CupertinoAlertDialog(
-              title: const Text('更新可用'),
-              content: Text(response),
-              actions: [
-                CupertinoDialogAction(
-                  child: const Text('忽略'),
-                  onPressed: () async {
-                    Navigator.of(context).pop();
-                  },
-                ),
-                CupertinoDialogAction(
-                  child: const Text('访问网站'),
-                  onPressed: () async {
-                    await launchUrlString(
-                      'https://celechron.top',
-                      mode: LaunchMode.externalApplication,
-                    );
-                  },
-                ),
-              ],
-            );
-          });
+        context: context,
+        builder: (context) {
+          return CupertinoAlertDialog(
+            title: const Text('更新可用'),
+            content: Text(response),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('忽略'),
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                },
+              ),
+              CupertinoDialogAction(
+                child: const Text('访问网站'),
+                onPressed: () async {
+                  await launchUrlString(
+                    'https://celechron.top',
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      );
     }
   }
 }
@@ -118,13 +121,12 @@ class _GlassHomeTabsState extends State<GlassHomeTabs> {
 
   Widget _dock(BuildContext context) {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final accent = CupertinoDynamicColor.resolve(GlassPalette.accent, context);
-    final inactive =
-        CupertinoDynamicColor.resolve(CupertinoColors.secondaryLabel, context);
+    final accent = GlassPalette.accentColor(context);
+    final inactive = GlassPalette.secondaryLabel(context);
     return GlassSurface(
       key: const ValueKey('home-glass-dock'),
-      borderRadius: 34,
-      padding: const EdgeInsets.all(6),
+      borderRadius: GlassGeometry.surfaceRadius,
+      padding: const EdgeInsets.all(GlassGeometry.dockInset),
       tint: CupertinoDynamicColor.resolve(GlassPalette.barColor, context),
       blur: true,
       emphasized: true,
@@ -151,28 +153,42 @@ class _GlassHomeTabsState extends State<GlassHomeTabs> {
                           : const Duration(milliseconds: 180),
                       curve: Curves.easeOutCubic,
                       decoration: index == _indexNum
-                          ? GlassPalette.decoration(context,
-                              radius: 28, selected: true)
+                          ? GlassPalette.decoration(
+                              context,
+                              radius: GlassGeometry.insetRadius(
+                                GlassGeometry.dockInset,
+                              ),
+                              selected: true,
+                            )
                           : BoxDecoration(
-                              borderRadius: BorderRadius.circular(28)),
+                              borderRadius: BorderRadius.circular(
+                                GlassGeometry.insetRadius(
+                                  GlassGeometry.dockInset,
+                                ),
+                              ),
+                            ),
                       alignment: Alignment.center,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(_tabs[index].icon,
-                              size: 24,
-                              color: index == _indexNum ? accent : inactive),
+                          Icon(
+                            _tabs[index].icon,
+                            size: 24,
+                            color: index == _indexNum ? accent : inactive,
+                          ),
                           const SizedBox(height: 3),
-                          Text(_tabs[index].label,
-                              maxLines: 1,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  height: 1.15,
-                                  fontWeight: index == _indexNum
-                                      ? FontWeight.w600
-                                      : FontWeight.w500,
-                                  color:
-                                      index == _indexNum ? accent : inactive)),
+                          Text(
+                            _tabs[index].label,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 1.15,
+                              fontWeight: index == _indexNum
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: index == _indexNum ? accent : inactive,
+                            ),
+                          ),
                         ],
                       ),
                     ),

@@ -118,12 +118,10 @@ class CalendarPage extends StatelessWidget {
                           startingDayOfWeek: StartingDayOfWeek.monday,
                           daysOfWeekStyle: DaysOfWeekStyle(
                             weekdayStyle: TextStyle(
-                              color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.secondaryLabel, context),
+                              color: GlassPalette.secondaryLabel(context),
                             ),
                             weekendStyle: TextStyle(
-                              color: CupertinoDynamicColor.resolve(
-                                  CupertinoColors.secondaryLabel, context),
+                              color: GlassPalette.secondaryLabel(context),
                             ),
                             dowTextFormatter: (date, locale) => <String>[
                               '',
@@ -187,8 +185,7 @@ class CalendarPage extends StatelessWidget {
                                 .textTheme
                                 .textStyle
                                 .copyWith(
-                                  color: CupertinoDynamicColor.resolve(
-                                      CupertinoColors.secondaryLabel, context),
+                                  color: GlassPalette.secondaryLabel(context),
                                 ),
                             outsideTextStyle: CupertinoTheme.of(context)
                                 .textTheme

@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:celechron/design/app_background_scope.dart';
+import 'package:celechron/design/glass_geometry.dart';
 import 'package:celechron/design/refractive_glass.dart';
 
 /// Shared colors. Optical distortion is provided separately by RefractiveGlass;
@@ -26,6 +28,22 @@ abstract final class GlassPalette {
   static bool isDark(BuildContext context) =>
       CupertinoTheme.brightnessOf(context) == Brightness.dark;
 
+  static bool hasCustomBackground(BuildContext context) =>
+      _backgroundImage(context) != null && !MediaQuery.highContrastOf(context);
+
+  static Color secondaryLabel(BuildContext context) => hasCustomBackground(
+          context)
+      ? isDark(context)
+          ? const Color(0xFFE1E7EF)
+          : const Color(0xFF24303F)
+      : CupertinoDynamicColor.resolve(CupertinoColors.secondaryLabel, context);
+
+  static Color accentColor(BuildContext context) => hasCustomBackground(context)
+      ? isDark(context)
+          ? const Color(0xFFD6E8FF)
+          : const Color(0xFF0E2C64)
+      : CupertinoDynamicColor.resolve(accent, context);
+
   static Color surfaceColor(BuildContext context) =>
       isDark(context) ? const Color(0xFF1D2A40) : const Color(0xFFF9FBFF);
 
@@ -39,21 +57,26 @@ abstract final class GlassPalette {
 
   static BoxDecoration decoration(
     BuildContext context, {
-    double radius = 24,
+    double radius = GlassGeometry.surfaceRadius,
     Color? tint,
     bool selected = false,
   }) {
     final dark = isDark(context);
     final contrast = MediaQuery.highContrastOf(context);
+    final hasPhoto = _backgroundImage(context) != null;
     final color = tint == null
-        ? CupertinoDynamicColor.resolve(accent, context)
+        ? accentColor(context)
         : CupertinoDynamicColor.resolve(tint, context);
-    final neutral = dark ? const Color(0xFFCCD7E5) : CupertinoColors.white;
+    final neutral = dark
+        ? hasPhoto
+            ? const Color(0xFF101720)
+            : const Color(0xFFCCD7E5)
+        : CupertinoColors.white;
     final fill = selected
         ? color.withValues(alpha: dark ? 0.16 : 0.11)
         : Color.alphaBlend(
             color.withValues(alpha: tint == null ? 0 : 0.025),
-            neutral.withValues(alpha: dark ? 0.055 : 0.12),
+            neutral.withValues(alpha: hasPhoto ? 0.30 : (dark ? 0.055 : 0.12)),
           );
     return BoxDecoration(
       color: contrast ? surfaceColor(context) : fill,
@@ -75,35 +98,120 @@ abstract final class GlassPalette {
 /// Quiet, static shapes give the real backdrop a little structure to refract.
 /// Content scrolling under floating controls is sampled from the same frame.
 class GlassBackdrop extends StatelessWidget {
-  const GlassBackdrop({super.key, required this.child, this.baseColor});
+  const GlassBackdrop({super.key, required this.child, this.baseColor})
+      : _forcePaint = false;
+
+  const GlassBackdrop._preview({required this.child})
+      : baseColor = null,
+        _forcePaint = true;
 
   final Widget child;
   final Color? baseColor;
+  final bool _forcePaint;
 
   @override
   Widget build(BuildContext context) {
     final dark = GlassPalette.isDark(context);
     final contrast = MediaQuery.highContrastOf(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: CupertinoDynamicColor.resolve(
-                    baseColor ?? GlassPalette.background, context),
+    final image = _backgroundImage(context);
+    final painted =
+        context.dependOnInheritedWidgetOfExactType<_PaintedGlassBackdrop>();
+    // The tab host owns the full-screen backdrop. Pages inside it must not
+    // crop and veil the same image again when keyboard/safe-area sizes change.
+    if (!_forcePaint && painted != null && painted.image == image) return child;
+
+    final base = CupertinoDynamicColor.resolve(
+      baseColor ?? GlassPalette.background,
+      context,
+    );
+    Widget defaultBackground() => ColoredBox(
+          color: base,
+          child: contrast
+              ? null
+              : CustomPaint(painter: _BackdropShapes(dark: dark)),
+        );
+    return _PaintedGlassBackdrop(
+      image: image,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: ExcludeSemantics(
+              child: IgnorePointer(
+                child: image == null || contrast
+                    ? defaultBackground()
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(color: base),
+                          Image(
+                            image: image,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            filterQuality: FilterQuality.medium,
+                            excludeFromSemantics: true,
+                            errorBuilder: (_, __, ___) => defaultBackground(),
+                          ),
+                          ColoredBox(
+                            color: (dark
+                                    ? const Color(0xFF070D17)
+                                    : CupertinoColors.white)
+                                .withValues(alpha: dark ? .64 : .60),
+                          ),
+                        ],
+                      ),
               ),
-              child: contrast
-                  ? null
-                  : CustomPaint(painter: _BackdropShapes(dark: dark)),
             ),
           ),
-        ),
-        child,
-      ],
+          child,
+        ],
+      ),
     );
   }
+}
+
+ImageProvider<Object>? _backgroundImage(BuildContext context) {
+  final preview =
+      context.dependOnInheritedWidgetOfExactType<_PreviewBackground>();
+  return preview != null
+      ? preview.image
+      : AppBackgroundScope.maybeOf(context)?.image;
+}
+
+class _PaintedGlassBackdrop extends InheritedWidget {
+  const _PaintedGlassBackdrop({required this.image, required super.child});
+  final ImageProvider<Object>? image;
+
+  @override
+  bool updateShouldNotify(_PaintedGlassBackdrop oldWidget) =>
+      image != oldWidget.image;
+}
+
+class _PreviewBackground extends InheritedWidget {
+  const _PreviewBackground({required this.image, required super.child});
+  final ImageProvider<Object>? image;
+
+  @override
+  bool updateShouldNotify(_PreviewBackground oldWidget) =>
+      image != oldWidget.image;
+}
+
+/// Uses the exact app backdrop and material while leaving saved settings alone.
+class GlassBackgroundPreview extends StatelessWidget {
+  const GlassBackgroundPreview({
+    super.key,
+    required this.image,
+    required this.child,
+  });
+
+  final ImageProvider<Object>? image;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => _PreviewBackground(
+        image: image,
+        child: GlassBackdrop._preview(child: child),
+      );
 }
 
 class _BackdropShapes extends CustomPainter {
@@ -117,18 +225,30 @@ class _BackdropShapes extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFF789DCC).withValues(alpha: dark ? 0.09 : 0.08);
     canvas.drawCircle(
-        Offset(size.width * .03, size.height * .18), span * .66, paint);
+      Offset(size.width * .03, size.height * .18),
+      span * .66,
+      paint,
+    );
     paint.color = const Color(0xFF949CC6).withValues(alpha: dark ? .08 : .055);
     canvas.drawCircle(
-        Offset(size.width * 1.08, size.height * .72), span * .77, paint);
+      Offset(size.width * 1.08, size.height * .72),
+      span * .77,
+      paint,
+    );
     paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = const Color(0xFF7696BD).withValues(alpha: dark ? .12 : .095);
     canvas.drawCircle(
-        Offset(size.width * .03, size.height * .18), span * .75, paint);
+      Offset(size.width * .03, size.height * .18),
+      span * .75,
+      paint,
+    );
     canvas.drawCircle(
-        Offset(size.width * 1.08, size.height * .72), span * .88, paint);
+      Offset(size.width * 1.08, size.height * .72),
+      span * .88,
+      paint,
+    );
   }
 
   @override
@@ -141,7 +261,7 @@ class GlassSurface extends StatelessWidget {
     required this.child,
     this.padding = EdgeInsets.zero,
     this.margin = EdgeInsets.zero,
-    this.borderRadius = 24,
+    this.borderRadius = GlassGeometry.surfaceRadius,
     this.tint,
     this.blur = false,
     this.emphasized = false,
@@ -163,12 +283,17 @@ class GlassSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = GlassPalette.isDark(context);
     final contrast = MediaQuery.highContrastOf(context);
-    final decoration = GlassPalette.decoration(context,
-        radius: borderRadius, tint: tint, selected: emphasized);
+    final decoration = GlassPalette.decoration(
+      context,
+      radius: borderRadius,
+      tint: tint,
+      selected: emphasized,
+    );
     final surface = DecoratedBox(
       decoration: modal && !contrast
           ? decoration.copyWith(
-              color: GlassPalette.surfaceColor(context).withValues(alpha: .9))
+              color: GlassPalette.surfaceColor(context).withValues(alpha: .9),
+            )
           : decoration,
       child: Padding(padding: padding, child: child),
     );
@@ -181,8 +306,9 @@ class GlassSurface extends StatelessWidget {
               ? const []
               : [
                   BoxShadow(
-                    color: const Color(0xFF07101C)
-                        .withValues(alpha: dark ? 0.12 : 0.035),
+                    color: const Color(
+                      0xFF07101C,
+                    ).withValues(alpha: dark ? 0.12 : 0.035),
                     blurRadius: blur ? 20 : 12,
                     offset: const Offset(0, 4),
                   ),
